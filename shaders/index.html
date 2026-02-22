@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shader Playground</title>
+  <style>
+    #original,
+    #processed {
+      width: 1920px;
+      height: 1080px;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="canvas" width="512" height="512"></canvas>
+
+  <div style="display: flex; gap: 4px; flex-direction: column">
+    <input type="file" id="inputImg" accept="image/*" />
+    <img id="inputPreview" src="#" alt="Selected image preview"
+      style="display: none; max-width: 1920px; max-height: 1080px" />
+
+    <button id="processBtn">Process</button>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <label>
+      Before
+      <img id="original" alt="original" />
+    </label>
+    <label>
+      After
+      <img id="processed" alt="processed" />
+    </label>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+</body>
+
+</html>

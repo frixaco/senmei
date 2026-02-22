@@ -1,118 +1,152 @@
-# Anime4K_Upscale_CNN_x2_VL.glsl Explained (Intuition First)
+# Anime4K_Upscale_CNN_x2_VL.glsl Explained (Very Concrete, No Jargon)
 
-This guide explains `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl` from first principles.
-Goal: you can read the shader and understand what each pass is trying to achieve.
+This guide explains `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl` in plain words.
 
----
+Main goal:
 
-## 0) Tiny assumptions
-
-Assume only:
-- image = grid of pixels
-- each pixel stores color numbers
-
-Everything else explained from zero.
+- you can open the file
+- you can point to each step
+- you can say what that step does in normal words
 
 ---
 
-## 1) What this shader does
+## 0) Promise for this document
 
-In one sentence:
+No "jargon soup".
 
-It takes a low-res frame, computes learned detail clues, then rearranges those clues into a 2x bigger frame and adds them on top of the original color.
-
-So the model predicts detail correction, not full color from scratch.
+When a code word must appear, I give plain meaning right next to it.
 
 ---
 
-## 2) Mental model before code
+## 1) Only two assumptions
 
-Think "factory line":
-- early stations: detect local clues (edges, line directions, flat areas)
-- middle stations: refine and combine clues
-- late stations: produce subpixel detail values
-- final station: place those values into a 2x2 output pattern
+Assume only this:
 
-If you keep this picture, the long code becomes readable.
+- an image is a grid of pixels
+- each pixel holds color numbers
 
----
-
-## 3) What are pass, texture, channel?
-
-### Pass
-One mini-program run over every output pixel.
-Input textures -> math -> one output texture.
-
-### Texture
-Image-sized grid of numbers.
-Examples: `MAIN`, `conv2d_tf`, `conv2d_4_tf1`.
-
-### Channel
-One number slot inside a pixel.
-`vec4` means 4 channels at one pixel.
-
-Simple view: each pass writes another "helper image" with 4 numbers per pixel.
+That is enough.
 
 ---
 
-## 4) Why the file is huge
+## 2) Old words -> plain words (use this map)
 
-It is generated neural-network math:
-- many learned constants
-- repeated structure across layers
-- loop-unrolled for speed
+I will mostly use plain words. If you see old terms elsewhere:
 
-Do not read constant-by-constant first. Read structure first.
-
----
-
-## 5) `//!...` lines are pipeline wiring
-
-These are not regular GLSL statements.
-
-Most important directives:
-- `//!BIND X`: read texture `X`
-- `//!SAVE Y`: write texture `Y`
-- `//!WIDTH` / `//!HEIGHT`: output size of this pass
-- `//!COMPONENTS 4`: output pixel has 4 numbers
-- `//!WHEN ...`: run condition
-
-Here, `//!WHEN` means this upscaler runs only when actual upscale ratio is large enough.
+- `feature` -> temporary number used during calculation
+- `two branches` -> two temporary-image name lines: `_tf` line and `_tf1` line
+- `dual-branch refinement` -> six rounds where each round reads one `_tf` + one `_tf1`, then writes next `_tf` + next `_tf1`
+- `fusion head` -> big combine step near the end
+- `depth-to-space` -> unpack stored values into a 2x2 block in bigger image
+- `residual add` -> `final = original + correction`
 
 ---
 
-## 5.1) GLSL syntax used in this file (quick primer)
+## 3) What this shader does in one plain sentence
 
-This section explains only syntax patterns you actually see in this shader.
+It takes a smaller image, computes many temporary numbers, turns those numbers into a 2x bigger pixel grid, then uses those numbers as color changes (add or subtract) to the original color.
 
-### Function shape
+---
 
-You will repeatedly see:
+## 4) What is stored where
+
+This file uses many image-sized buffers.
+
+- input image: `MAIN`
+- temporary outputs: `conv2d_tf`, `conv2d_tf1`, `conv2d_1_tf`, and so on
+
+Each temporary output pixel stores 4 numbers (because `//!COMPONENTS 4`).
+
+Important:
+
+- these temporary numbers are not final RGB color
+- they are intermediate math values used by later steps
+
+---
+
+## 5) Why file is long
+
+Because this is generated math code from trained weights:
+
+- lots of constants
+- same pattern repeated many times
+- loops expanded by generator for speed
+
+So the file looks scary, but the structure repeats.
+
+---
+
+## 6) `//!` lines: pipeline instructions
+
+These lines tell the shader runner how to wire passes.
+
+- `//!BIND X` -> read texture `X`
+- `//!SAVE Y` -> write output texture `Y`
+- `//!WIDTH ...` / `//!HEIGHT ...` -> output size for this pass
+- `//!COMPONENTS 4` -> output has 4 numbers per pixel
+- `//!WHEN ...` -> run only if condition is true
+
+In this shader, `//!WHEN` checks that real upscaling is needed.
+
+---
+
+## 6.1) What the `/ 1.200` part means
+
+Good catch: it is **`1.200`** (same as `1.2`), not `1200`.
+
+The real line in source is:
+
+```text
+//!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
+```
+
+Plain meaning:
+
+- compute width ratio: `OUTPUT.w / MAIN.w`
+- compute height ratio: `OUTPUT.h / MAIN.h`
+- check width ratio > `1.2`
+- check height ratio > `1.2`
+- run only if both checks are true
+
+So this pass runs only when both width and height are at least 20% larger than input.
+
+Quick examples:
+
+- `1.10x` width and `1.10x` height -> do not run
+- `1.30x` width and `1.30x` height -> run
+- `1.30x` width and `1.05x` height -> do not run
+
+Why this check exists:
+
+- avoids heavy CNN work when scaling change is small
+- lets a simpler resize method handle tiny resize cases
+
+---
+
+## 7) GLSL syntax used here (only what you need)
+
+### 8.1 Function form
 
 ```glsl
 vec4 hook() {
     ...
-    return result;
+    return outColor;
 }
 ```
 
-Meaning:
-- `vec4` before function name = function returns 4 numbers
-- `hook` = entry function name expected by this pipeline
-- `return ...;` = final value written for this pixel in this pass
+- `vec4` before `hook` means function returns 4 numbers
+- `return` gives final 4-number output for current pixel
 
-### Common types
+### 8.2 Common types
 
-- `float`: one decimal number
-- `int`: one whole number
-- `vec2`: 2-number vector (often x/y offset)
-- `vec4`: 4-number vector (often channel pack)
-- `ivec2`: 2-number integer vector (often pixel index)
-- `mat4`: 4x4 matrix (channel mixer)
+- `float` = decimal number
+- `int` = whole number
+- `vec2` = 2 numbers
+- `vec4` = 4 numbers
+- `ivec2` = 2 whole numbers
+- `mat4` = 4x4 matrix of numbers
 
-### Constructors
-
-Examples:
+### 8.3 Constructors
 
 ```glsl
 vec2(1.0, -1.0)
@@ -120,115 +154,44 @@ vec4(c0, c1, c2, c3)
 ivec2(0, 1)
 ```
 
-Meaning: create those types from listed values.
+This means "create that type with these values".
 
-### Component access and indexing
+### 8.4 Accessing one value from `vec4`
 
-You may access vector values by:
-- named components: `.x`, `.y`, `.z`, `.w`
-- numeric index: `[0]`, `[1]`, `[2]`, `[3]`
+- by name: `.x`, `.y`, `.z`, `.w`
+- by index: `[0]`, `[1]`, `[2]`, `[3]`
 
-Both mean "pick one channel from vec4".
+Both mean pick one of the 4 stored numbers.
 
-### Texture sampling helpers (provided by framework)
-
-Examples used in this file:
+### 8.5 Sampling helpers (provided by framework)
 
 ```glsl
 MAIN_tex(MAIN_pos)
 MAIN_texOff(vec2(dx, dy))
 ```
 
-Meaning:
-- `*_tex(...)`: sample bound texture at coordinate
-- `*_texOff(...)`: sample neighbor with offset from current pixel
+- first reads current pixel value
+- second reads neighbor offset `(dx,dy)` from current pixel
 
-These helpers are generated by the hosting shader framework.
-
-### Macros (`#define`)
-
-The file defines shorthand helpers like:
+### 8.6 Macros
 
 ```glsl
 #define go_0(x, y) max(conv2d_tf_texOff(vec2(x, y)), vec4(0.0))
 ```
 
-Meaning:
-- text substitution before compile
-- used to avoid repeating long expressions
+`#define` creates a text shortcut before compile.
 
-If macro line is long, GLSL uses `\` to continue to next line.
+### 8.7 Math used all over
 
-### Core math forms you see
-
-- `a + b`, `a - b`, `a * b`: normal arithmetic
-- `max(v, 0.0)`: clamp negative to zero (used for sign split)
-- `mat4 * vec4`: linear mix from 4 input channels to 4 output channels
-
-### Coordinate helpers in final pass
-
-Used for depth-to-space placement:
-
-```glsl
-vec2 f = fract(pos * size);
-ivec2 i = ivec2(f * 2.0);
-```
-
-Meaning:
-- `fract(x)` keeps only fractional part
-- convert to integer cell index to know which subpixel in 2x2 block
-
-### Type conversion (cast)
-
-When needed, file converts types explicitly:
-- float -> int with `int(...)`
-- float vector -> int vector with `ivec2(...)`
-
-This avoids ambiguous math between float and integer domains.
+- `a + b`, `a - b`, `a * b`
+- `max(v, 0.0)`
+- `mat4 * vec4`
 
 ---
 
-## 6) Convolution from first principles
+## 8) 18-step map of this file
 
-"Convolution" here means:
-- read a small neighborhood
-- multiply each sample by learned weight
-- sum
-
-For 3x3, neighborhood is:
-
-```text
-(-1,-1) (0,-1) (1,-1)
-(-1, 0) (0, 0) (1, 0)
-(-1, 1) (0, 1) (1, 1)
-```
-
-Intuition:
-- different weight patterns detect different local structures
-- one pattern may react to vertical edges
-- another may react to diagonals
-
-So each output channel is a "detector response map".
-
----
-
-## 7) Why many passes help
-
-One pass sees only immediate local pattern.
-Many stacked passes can:
-- combine early clues into richer clues
-- indirectly use wider context
-
-Intuition:
-- pass 1: tiny fragments
-- pass 4: stronger line continuity clues
-- pass 10: mixed high-level confidence about where detail should go
-
----
-
-## 8) Total pipeline in this file
-
-There are 18 passes. Output names in order:
+Outputs in order:
 
 1. `conv2d_tf`
 2. `conv2d_tf1`
@@ -249,278 +212,277 @@ There are 18 passes. Output names in order:
 17. `conv2d_last_tf2`
 18. final `MAIN`
 
-Grouped view:
-- passes 1-2: starter feature extractors (two branches)
-- passes 3-14: repeated dual-branch 3x3 refinement
-- passes 15-17: large 1x1 fusion heads
-- pass 18: depth-to-space + residual add
+Grouped meaning:
+
+- steps 1-2: first extraction from input image
+- steps 3-14: six rounds, each round reads one `_tf` + one `_tf1` and writes the next pair
+- steps 15-17: big combine at each pixel
+- step 18: build 2x output grid and add original color
 
 ---
 
-## 9) Passes 1-2: two starter branches
+## 9) Steps 1-2: first extraction from input image
 
 Starts at:
+
 - `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:24`
 - `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:46`
 
-Both read `MAIN` with 3x3 conv but with different weights.
+Both steps read `MAIN` using a 3x3 neighborhood.
 
-Intuition:
-- branch A and branch B are two different "first opinions"
-- both look at same image, extract different clue styles
+3x3 means each output pixel uses this neighbor set:
 
-Outputs:
-- A: `conv2d_tf`
-- B: `conv2d_tf1`
-
----
-
-## 10) Sign split: key concept for this file
-
-From pass 3 onward, you see patterns like:
-
-```glsl
-max(x, 0.0)
-max(-x, 0.0)
+```text
+(-1,-1) (0,-1) (1,-1)
+(-1, 0) (0, 0) (1, 0)
+(-1, 1) (0, 1) (1, 1)
 ```
 
-For value `x`:
-- `p = max(x, 0)` positive part
-- `n = max(-x, 0)` negative magnitude part
-
-Useful identities:
-- `x = p - n`
-- `abs(x) = p + n`
-
-Intuition:
-- positive and negative evidence can mean different things
-- splitting them lets later layers weight them separately
-
-Example meaning (not exact labels):
-- positive response: edge in one direction
-- negative response: edge in opposite direction
+The two steps use different weights, so they create two different temporary outputs.
 
 ---
 
-## 11) Why this creates 16 logical inputs
+## 10) What exactly happens in the six repeated rounds (steps 3-14)?
 
-In repeated blocks you often see `Conv-4x3x3x16`.
+From step 3 to step 14:
 
-Interpretation:
-- output channels: 4
-- kernel size: 3x3
-- logical input channels: 16
+- there are two name lines of temporary images:
+  - line A: names ending in `_tf`
+  - line B: names ending in `_tf1`
+- each round does the same pattern:
+  1. read previous A and B textures
+  2. read neighbor pixels (3x3)
+  3. use `max(x,0)` and `max(-x,0)` split
+  4. write new A texture and new B texture
 
-Where 16 comes from:
-- two branch textures (`...tf` and `...tf1`) x 4 channels each = 8
-- sign split doubles logical channels = 16
+Exact round-by-round mapping:
 
-So 16 is channel count after split, not texture count.
+- round 1: read `conv2d_tf`, `conv2d_tf1` -> write `conv2d_1_tf`, `conv2d_1_tf1`
+- round 2: read `conv2d_1_tf`, `conv2d_1_tf1` -> write `conv2d_2_tf`, `conv2d_2_tf1`
+- round 3: read `conv2d_2_tf`, `conv2d_2_tf1` -> write `conv2d_3_tf`, `conv2d_3_tf1`
+- round 4: read `conv2d_3_tf`, `conv2d_3_tf1` -> write `conv2d_4_tf`, `conv2d_4_tf1`
+- round 5: read `conv2d_4_tf`, `conv2d_4_tf1` -> write `conv2d_5_tf`, `conv2d_5_tf1`
+- round 6: read `conv2d_5_tf`, `conv2d_5_tf1` -> write `conv2d_6_tf`, `conv2d_6_tf1`
 
----
-
-## 12) Tiny numeric intuition for sign split
-
-Suppose one feature value is `x = -0.7`.
-
-Then:
-- positive part = `max(-0.7,0) = 0`
-- negative part = `max(0.7,0) = 0.7`
-
-If next layer uses separate weights:
-- positive weight = `+0.2`
-- negative weight = `-1.1`
-
-Contribution:
-- `0.2 * 0 + (-1.1) * 0.7 = -0.77`
-
-Without split, this independent control is harder.
+So "repeated cleanup/update" means exactly this repeated read-old-pair -> compute -> write-new-pair loop.
 
 ---
 
-## 13) Passes 3-14: repeated dual-branch refinement
+## 11) The `max(x,0)` and `max(-x,0)` pattern
 
-Produced branch pairs:
-- `(conv2d_1_tf, conv2d_1_tf1)`
-- `(conv2d_2_tf, conv2d_2_tf1)`
-- `(conv2d_3_tf, conv2d_3_tf1)`
-- `(conv2d_4_tf, conv2d_4_tf1)`
-- `(conv2d_5_tf, conv2d_5_tf1)`
-- `(conv2d_6_tf, conv2d_6_tf1)`
+You see this pattern a lot.
 
-Every block is still local 3x3 processing, but inputs are richer each step.
+For one value `x`:
 
-Intuition:
-- branch A may carry one clue family
-- branch B carries complementary clues
-- repeated blocks sharpen, suppress noise, and combine cues
+- `pos = max(x, 0)`
+- `neg = max(-x, 0)`
+
+Example with `x = -0.7`:
+
+- `pos = 0`
+- `neg = 0.7`
+
+Why do this?
+
+- later math can weight positive and negative evidence separately
+- this gives more control than using raw `x` directly
+
+You can rebuild the original value:
+
+- `x = pos - neg`
 
 ---
 
-## 14) Passes 15-17: three 1x1 fusion heads
+## 12) Why labels like `Conv-4x3x3x16` appear
+
+Read `Conv-4x3x3x16` as:
+
+- output has 4 numbers per pixel
+- neighborhood size is 3x3
+- logic inside effectively uses 16 input channels
+
+Where 16 comes from in these middle steps:
+
+- 2 textures x 4 channels = 8
+- split into positive and negative parts = 16
+
+---
+
+## 13) Steps 15-17: big combine near the end
 
 Starts around:
+
 - `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:704`
 - `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:785`
 - `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:866`
 
-Header: `Conv-4x1x1x112`.
+These steps use `1x1`.
 
-Meaning:
-- 1x1: no neighbor lookup
-- operation is channel mixing at same pixel
+`1x1` means:
 
-Why 112 logical inputs:
-- 14 bound textures (`conv2d_tf`, `conv2d_tf1`, ..., `conv2d_6_tf1`)
-- each has 4 channels -> 56
-- sign split doubles -> 112
+- no neighbor pixels used
+- only current pixel location used
+- but many channels from many textures are mixed
 
-Intuition:
-- this is a big "mixer" stage
-- it gathers almost all earlier clues and decides final packed detail features
+So this is a per-pixel "big combine".
 
-Outputs:
+Why `112` in `Conv-4x1x1x112`:
+
+- 14 input textures are bound
+- each texture gives 4 channels -> `14 x 4 = 56`
+- positive/negative split doubles logic -> `112`
+
+Outputs from these three steps:
+
 - `conv2d_last_tf`
 - `conv2d_last_tf1`
 - `conv2d_last_tf2`
 
 ---
 
-## 15) Final pass: depth-to-space (real x2 creation)
+## 14) Step 18: where 2x image is actually built
 
 Starts at `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:947`.
 
-This pass sets output size to 2x width and 2x height.
+This step sets output size to:
 
-### Core idea
-Earlier heads store subpixel details in channels.
-Depth-to-space unpacks those channel values into different positions in a 2x2 output block.
+- width x 2
+- height x 2
 
-Block intuition for one low-res source pixel:
+So this is the first step that writes the larger image grid.
 
-```text
-(0,0) (1,0)
-(0,1) (1,1)
-```
+Why this is true (hard proof in code):
 
-Shader computes which spot current output pixel is (`fract` -> `ivec2`), then selects proper channel value.
+- `//!WIDTH conv2d_last_tf.w 2 *`
+- `//!HEIGHT conv2d_last_tf.h 2 *`
+
+Example:
+
+- if input is `1280 x 720`
+- this step writes `2560 x 1440`
+
+All earlier steps keep old size.
+
+So:
+
+- earlier steps = compute color-change numbers
+- this final step = actual pixel-count increase (real upscaling)
+
+If pixel count does not increase, that is sharpening only.
+Here pixel count does increase in this final step.
+
+### Concrete picture
+
+One low-res pixel at `(x, y)` maps to four high-res pixels:
+
+- `(2x, 2y)`
+- `(2x+1, 2y)`
+- `(2x, 2y+1)`
+- `(2x+1, 2y+1)`
+
+The step chooses which of these four positions it is writing now, then picks matching stored value from the last temporary outputs.
+
+This unpacking process is what people call "depth-to-space".
 
 ---
 
-## 16) Why there are three last textures
+## 15) Why there are three `conv2d_last_*` outputs
 
-Final assembly uses three heads:
-- one contributes `c0`
-- one contributes `c1`
-- one contributes `c2`
-- `c3` is set equal to `c2`
+Final assembly reads:
 
-See around `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:960`.
+- `conv2d_last_tf`
+- `conv2d_last_tf1`
+- `conv2d_last_tf2`
 
-So this variant effectively uses three distinct predicted components before residual add.
+Then makes `c0`, `c1`, `c2`, `c3`.
+
+In this file, `c3` is set equal to `c2`.
+
+See near `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:960`.
 
 ---
 
-## 17) Residual add: why `+ MAIN_tex(MAIN_pos)`
+## 16) Final add-back step
 
-Final return:
+Final line is:
 
 ```glsl
 return vec4(c0, c1, c2, c3) + MAIN_tex(MAIN_pos);
 ```
 
-Interpretation:
-- base = current input color
-- network = detail delta
-- output = base + delta
+Read this literally:
 
-Why this is good:
-- easier to learn small corrections
-- keeps base structure stable
-- reduces full-image hallucination risk
+- left side = predicted correction values
+- right side = original sampled color
+- result = original + correction
+
+This add-back process is what people call "residual add".
 
 ---
 
-## 18) Compact pseudocode for whole file
+## 17) Full file in short pseudocode
 
 ```text
 input = MAIN
 
-// starter branches
-a0 = Conv3x3(input)
-b0 = Conv3x3(input)
+// first two outputs
+a0 = Step3x3(input)
+b0 = Step3x3(input)
 
-// repeated dual-branch blocks (sign split inside)
-(a1,b1) = Block(a0,b0)
-(a2,b2) = Block(a1,b1)
-(a3,b3) = Block(a2,b2)
-(a4,b4) = Block(a3,b3)
-(a5,b5) = Block(a4,b4)
-(a6,b6) = Block(a5,b5)
+// six repeated rounds: read previous pair, write next pair
+(a1, b1) = UpdateBoth(a0, b0)
+(a2, b2) = UpdateBoth(a1, b1)
+(a3, b3) = UpdateBoth(a2, b2)
+(a4, b4) = UpdateBoth(a3, b3)
+(a5, b5) = UpdateBoth(a4, b4)
+(a6, b6) = UpdateBoth(a5, b5)
 
-// large 1x1 fusions
-h0 = Fuse1x1(a0,b0,a1,b1,a2,b2,a3,b3,a4,b4,a5,b5,a6,b6)
-h1 = Fuse1x1(a0,b0,a1,b1,a2,b2,a3,b3,a4,b4,a5,b5,a6,b6)
-h2 = Fuse1x1(a0,b0,a1,b1,a2,b2,a3,b3,a4,b4,a5,b5,a6,b6)
+// three big combine steps
+u0 = CombineAtSamePixel(all previous outputs)
+u1 = CombineAtSamePixel(all previous outputs)
+u2 = CombineAtSamePixel(all previous outputs)
 
-// unpack to 2x space and add base
-output = DepthToSpace2x(h0,h1,h2) + input
+// build bigger grid and add original color
+output = UnpackTo2x2(u0, u1, u2) + input
 ```
 
 ---
 
-## 19) How to read this file efficiently
+## 18) How to read the source file without getting lost
 
-Recommended order:
-1. Read only `//!DESC`, `//!BIND`, `//!SAVE` headers.
-2. Draw pass graph (name -> name arrows).
-3. Mark 3x3 blocks vs 1x1 blocks.
-4. Mark sign split macros once (`go_*`, `g_*`).
-5. Read depth-to-space pass last.
-6. Ignore exact float constants until structure is clear.
+Use this exact order:
 
-This avoids drowning in constants.
-
----
-
-## 20) Common confusion quick fixes
-
-"Is 2x happening in every pass?"
-- No. Most passes keep original size. Real spatial 2x mapping is final pass.
-
-"Are 112 inputs equal to 112 bound textures?"
-- No. 112 is logical channels after sign split.
-
-"Does 1x1 conv do nothing useful?"
-- No. It is powerful channel fusion at each pixel.
+1. Read only `//!DESC`, `//!BIND`, `//!SAVE` lines.
+2. Draw arrow graph of outputs feeding next steps.
+3. Mark which steps are `3x3` and which are `1x1`.
+4. Mark where `max(x,0)` and `max(-x,0)` pattern appears.
+5. Read final step (`:947` onward) last.
+6. Ignore giant constants until structure is clear.
 
 ---
 
-## 21) Why this file is a great master example
+## 19) Very short "am I understanding this right?" check
 
-It includes almost all Anime4K CNN building blocks in one place:
-- multi-pass pipeline
-- 3x3 learned feature extraction
-- sign split logic
-- dual-branch refinement
-- 1x1 fusion heads
-- depth-to-space upscaling
-- residual detail add
-- conditional run via `//!WHEN`
+If these statements feel true, you got it:
 
-Understand this file deeply, and many other Anime4K CNN shaders feel like smaller variants.
+- Most steps do not change image size.
+- Only last step writes the 2x bigger grid.
+- Middle steps mostly keep re-writing temporary outputs.
+- End does `original + correction`.
 
 ---
 
-## 22) Useful anchors in source shader
+## 20) Useful anchors in the original shader
 
-- First pass header: `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:24`
-- Second starter branch: `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:46`
-- First dual-branch 16-input block: `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:68`
-- First 1x1 fusion head: `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:704`
-- Final depth-to-space header: `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:947`
+- First step header: `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:24`
+- Second first-step header: `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:46`
+- First repeated-update block: `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:68`
+- First big-combine block: `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:704`
+- Final 2x build step: `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:947`
 - Final return line: `glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl:968`
 
 ---
 
-If you want, next step can be a small "manual tracing worksheet" for one pixel (pass-by-pass), which is usually the fastest way to lock intuition.
+## 21) One-line recap
+
+This file is an 18-step math pipeline: make temporary numbers, update them many times, unpack them into a 2x bigger pixel grid, then change original color by adding signed correction values.
