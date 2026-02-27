@@ -30,6 +30,7 @@ fn tex_off(tex: texture_2d<f32>, base_pos: vec4f, x_off: f32, y_off: f32) -> vec
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
 export const fragP1 = /* wgsl */`
 ${fragShared}
+
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
 	return tex_off(frame, pos, x_off, y_off);
 }
@@ -58,6 +59,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
 export const fragP2 = /* wgsl */`
 ${fragShared}
+
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
 	return max(tex_off(conv2d_tf, pos, x_off, y_off), vec4f(0.0));
 }
@@ -98,6 +100,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
 export const fragP3 = /* wgsl */`
 ${fragShared}
+
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
 	return max(tex_off(conv2d_tf_1, pos, x_off, y_off), vec4f(0.0));
 }
@@ -138,6 +141,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
 export const fragP4 = /* wgsl */`
 ${fragShared}
+
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
 	return max(tex_off(conv2d_tf_2, pos, x_off, y_off), vec4f(0.0));
 }
@@ -178,6 +182,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
 export const fragP5 = /* wgsl */`
 ${fragShared}
+
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
 	return max(tex_off(conv2d_tf_3, pos, x_off, y_off), vec4f(0.0));
 }
@@ -218,6 +223,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
 export const fragP6 = /* wgsl */`
 ${fragShared}
+
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
 	return max(tex_off(conv2d_tf_4, pos, x_off, y_off), vec4f(0.0));
 }
@@ -258,6 +264,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
 export const fragP7 = /* wgsl */`
 ${fragShared}
+
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
 	return max(tex_off(conv2d_tf_5, pos, x_off, y_off), vec4f(0.0));
 }
@@ -304,6 +311,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
 export const frag8 = /* wgsl */`
 ${fragShared}
+
 @fragment
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 	let g_0 = max(tex_off(conv2d_tf, pos, 0.0, 0.0), vec4f(0.0));
@@ -349,6 +357,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
 export const fragF = /* wgsl */`
 ${fragShared}
+
 @fragment
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let in_dims_u = textureDimensions(conv2d_tf_last);
