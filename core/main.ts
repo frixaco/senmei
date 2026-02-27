@@ -1,3 +1,16 @@
+import {
+  fragF,
+  fragP1,
+  fragP2,
+  fragP3,
+  fragP4,
+  fragP5,
+  fragP6,
+  fragP7,
+  frag8,
+  vertexShader,
+} from './shaders/Anime4K_Upscale_CNN_x2_M.ts'
+
 function getElementById<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id)
   if (!element) {
@@ -78,20 +91,48 @@ on('processBtn', 'click', async () => {
     format,
   })
 
-  const shaderCode = await fetch('./Anime4K_Upscale_CNN_x2_M.wgsl').then(
-    (r) => {
-      if (!r.ok) {
-        throw new Error('Failed to load Anime4K_Upscale_CNN_x2_M.wgsl')
-      }
-
-      return r.text()
-    },
-  )
-
-  const module = device.createShaderModule({
-    label: 'updscaler shaders',
-    code: shaderCode,
+  const moduleV = device.createShaderModule({
+    label: 'updscaler vertex shader',
+    code: vertexShader,
   })
+  const fragmentModules = {
+    p1: device.createShaderModule({
+      label: 'upscaler fragment pass 1',
+      code: fragP1,
+    }),
+    p2: device.createShaderModule({
+      label: 'upscaler fragment pass 2',
+      code: fragP2,
+    }),
+    p3: device.createShaderModule({
+      label: 'upscaler fragment pass 3',
+      code: fragP3,
+    }),
+    p4: device.createShaderModule({
+      label: 'upscaler fragment pass 4',
+      code: fragP4,
+    }),
+    p5: device.createShaderModule({
+      label: 'upscaler fragment pass 5',
+      code: fragP5,
+    }),
+    p6: device.createShaderModule({
+      label: 'upscaler fragment pass 6',
+      code: fragP6,
+    }),
+    p7: device.createShaderModule({
+      label: 'upscaler fragment pass 7',
+      code: fragP7,
+    }),
+    p8: device.createShaderModule({
+      label: 'upscaler fragment pass 8',
+      code: frag8,
+    }),
+    f: device.createShaderModule({
+      label: 'upscaler fragment final pass',
+      code: fragF,
+    }),
+  }
 
   // IMAGE TO BITMAP TO TEXTURE
   const bitmap = await createImageBitmap(selectedFile, {
@@ -182,17 +223,18 @@ on('processBtn', 'click', async () => {
   ]
 
   const createPipeline = (
-    entryPoint: string,
+    fragmentModule: GPUShaderModule,
     layout: GPUPipelineLayout,
+    label: string,
     targetFormat?: GPUTextureFormat,
   ) =>
     device.createRenderPipeline({
-      label: `pipeline ${entryPoint}`,
+      label,
       layout,
-      vertex: { entryPoint: 'v', module },
+      vertex: { entryPoint: 'v', module: moduleV },
       fragment: {
-        entryPoint,
-        module,
+        entryPoint: 'f',
+        module: fragmentModule,
         targets: [{ format: targetFormat ?? 'rgba8unorm' }],
       },
     })
@@ -202,15 +244,52 @@ on('processBtn', 'click', async () => {
   )
 
   const pipelines = {
-    f_1: createPipeline('f_1', pipelineLayouts[0]!),
-    f_2: createPipeline('f_2', pipelineLayouts[1]!),
-    f_3: createPipeline('f_3', pipelineLayouts[2]!),
-    f_4: createPipeline('f_4', pipelineLayouts[3]!),
-    f_5: createPipeline('f_5', pipelineLayouts[4]!),
-    f_6: createPipeline('f_6', pipelineLayouts[5]!),
-    f_7: createPipeline('f_7', pipelineLayouts[6]!),
-    f_final: createPipeline('f_final', pipelineLayouts[7]!),
-    f_finish: createPipeline('f_finish', pipelineLayouts[8]!, format),
+    f_1: createPipeline(
+      fragmentModules.p1,
+      pipelineLayouts[0]!,
+      'pipeline f_1',
+    ),
+    f_2: createPipeline(
+      fragmentModules.p2,
+      pipelineLayouts[1]!,
+      'pipeline f_2',
+    ),
+    f_3: createPipeline(
+      fragmentModules.p3,
+      pipelineLayouts[2]!,
+      'pipeline f_3',
+    ),
+    f_4: createPipeline(
+      fragmentModules.p4,
+      pipelineLayouts[3]!,
+      'pipeline f_4',
+    ),
+    f_5: createPipeline(
+      fragmentModules.p5,
+      pipelineLayouts[4]!,
+      'pipeline f_5',
+    ),
+    f_6: createPipeline(
+      fragmentModules.p6,
+      pipelineLayouts[5]!,
+      'pipeline f_6',
+    ),
+    f_7: createPipeline(
+      fragmentModules.p7,
+      pipelineLayouts[6]!,
+      'pipeline f_7',
+    ),
+    f_final: createPipeline(
+      fragmentModules.p8,
+      pipelineLayouts[7]!,
+      'pipeline f_final',
+    ),
+    f_finish: createPipeline(
+      fragmentModules.f,
+      pipelineLayouts[8]!,
+      'pipeline f_finish',
+      format,
+    ),
   }
 
   const createBindGroup = (
