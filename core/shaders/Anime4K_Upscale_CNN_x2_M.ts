@@ -1,22 +1,3 @@
-export const vertexShader = /* wgsl */`
-struct VSOut {
-	@builtin(position) pos: vec4f,
-}
-
-@vertex
-fn v(@builtin(vertex_index) vertexIndex: u32) -> VSOut {
-	let pos = array (
-		vec2f(-1, 1),
-		vec2f(4, 1),
-		vec2f(-1, -4),
-	);
-	let p = pos[vertexIndex];
-	var out: VSOut;
-	out.pos = vec4f(p, 0, 1);
-	return out;
-}
-`
-
 const fragShared = /* wgsl */`
 @group(0) @binding(0) var frame: texture_2d<f32>;
 @group(0) @binding(1) var frame_sampler: sampler;

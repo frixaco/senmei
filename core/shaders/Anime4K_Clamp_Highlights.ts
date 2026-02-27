@@ -3,7 +3,7 @@
 //!BIND HOOKED
 //!SAVE STATSMAX
 //!COMPONENTS 1
-
+const fragP1 = /* wgsl */`
 #define KERNELSIZE 5 //Kernel size, must be an positive odd integer.
 #define KERNELHALFSIZE 2 //Half of the kernel size without remainder. Must be equal to trunc(KERNELSIZE/2).
 
@@ -23,6 +23,7 @@ vec4 hook() {
 
 	return vec4(gmax, 0.0, 0.0, 0.0);
 }
+`
 
 //!DESC Anime4K-v4.0-De-Ring-Compute-Statistics
 //!HOOK MAIN
@@ -30,7 +31,7 @@ vec4 hook() {
 //!BIND STATSMAX
 //!SAVE STATSMAX
 //!COMPONENTS 1
-
+const fragP2 = /* wgsl */`
 #define KERNELSIZE 5 //Kernel size, must be an positive odd integer.
 #define KERNELHALFSIZE 2 //Half of the kernel size without remainder. Must be equal to trunc(KERNELSIZE/2).
 
@@ -46,12 +47,13 @@ vec4 hook() {
 
 	return vec4(gmax, 0.0, 0.0, 0.0);
 }
+`
 
 //!DESC Anime4K-v4.0-De-Ring-Clamp
 //!HOOK PREKERNEL
 //!BIND HOOKED
 //!BIND STATSMAX
-
+const fragP3 = /* wgsl */`
 float get_luma(vec4 rgba) {
 	return dot(vec4(0.299, 0.587, 0.114, 0.0), rgba);
 }
@@ -65,3 +67,4 @@ vec4 hook() {
 	//Otherwise we would need to convert RGB to YUV, modify Y then convert back to RGB.
 	return HOOKED_tex(HOOKED_pos) - (current_luma - new_luma);
 }
+`

@@ -5,12 +5,12 @@ A no-slop, hardware-accelerated MKV player with real-time WebGPU Anime4K upscali
 ### TODO
 
 - [ ] Port following shaders to WGSL:
-  - Anime4K_Clamp_Highlights.glsl
-  - Anime4K_Restore_CNN_VL.glsl
-  - Anime4K_Upscale_CNN_x2_VL.glsl
-  - Anime4K_AutoDownscalePre_x2.glsl
-  - Anime4K_AutoDownscalePre_x4.glsl
-  - Anime4K_Upscale_CNN_x2_M.glsl
+  - [ ] Anime4K_Clamp_Highlights.glsl
+  - [ ] Anime4K_Restore_CNN_VL.glsl
+  - [ ] Anime4K_Upscale_CNN_x2_VL.glsl
+  - [ ] Anime4K_AutoDownscalePre_x2.glsl
+  - [ ] Anime4K_AutoDownscalePre_x4.glsl
+  - [ ] Anime4K_Upscale_CNN_x2_M.glsl
 - [ ] handle !WHEN checks
 
 **Core Pipeline (Native Browser APIs)**
