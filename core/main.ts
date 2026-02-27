@@ -60,7 +60,7 @@ on('processBtn', 'click', async () => {
     return
   }
 
-  if (!navigator.gpu) {
+  if (!('gpu' in navigator)) {
     console.error('WebGPU not supported in this browser.')
     return
   }
@@ -109,7 +109,12 @@ on('processBtn', 'click', async () => {
 
   const stage1 = setupStage1(device, initialTexture, frameSampler)
   const stage2 = setupStage2(device, stage1.outputTexture, frameSampler)
-  const stage3 = setupStage3(device, stage2.outputTexture, frameSampler)
+  const stage3 = setupStage3(
+    device,
+    stage2.outputTexture,
+    frameSampler,
+    whenReference,
+  )
   const stage4 = setupStage4(
     device,
     stage3.outputTexture,

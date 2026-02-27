@@ -1114,6 +1114,9 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     result += mat4x4f(-0.018253656, -0.04197674, -0.040467236, 0.0, -0.04358929, -0.028309818, -0.025425073, 0.0, -0.008488672, -0.001727991, 0.00035808363, 0.0, -0.0011709273, 0.0052514165, 0.0059479307, 0.0) * g_26;
     result += mat4x4f(-0.08333935, -0.09818201, -0.09476284, 0.0, -0.033692095, -0.046259012, -0.045797516, 0.0, -0.007577072, 0.0022402718, 0.0016200038, 0.0, 0.0029786075, -0.020728534, -0.018938033, 0.0) * g_27;
     result += vec4(0.047567394, -0.02504617, -0.028163986, 0.0);
-    return result + MAIN_tex(MAIN_pos);
+    let frame_dims = vec2f(textureDimensions(frame));
+    let frame_uv = pos.xy / frame_dims;
+    let original = textureSampleLevel(frame, frame_sampler, frame_uv, 0.0);
+    return result + original;
 }
 `;

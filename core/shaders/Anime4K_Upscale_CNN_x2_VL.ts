@@ -1188,7 +1188,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!WIDTH conv2d_last_tf.w 2 *
 //!HEIGHT conv2d_last_tf.h 2 *
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
-const fragF = /* wgsl */`
+export const fragF = /* wgsl */`
 ${fragShared}
 
 @fragment
