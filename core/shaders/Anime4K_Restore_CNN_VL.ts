@@ -29,6 +29,26 @@ fn tex_off(tex: texture_2d<f32>, base_pos: vec4f, x_off: f32, y_off: f32) -> vec
 }
 `
 
+const restoreWhen: string | null = null
+export const whenP1 = restoreWhen
+export const whenP2 = restoreWhen
+export const whenP3 = restoreWhen
+export const whenP4 = restoreWhen
+export const whenP5 = restoreWhen
+export const whenP6 = restoreWhen
+export const whenP7 = restoreWhen
+export const whenP8 = restoreWhen
+export const whenP9 = restoreWhen
+export const whenP10 = restoreWhen
+export const whenP11 = restoreWhen
+export const whenP12 = restoreWhen
+export const whenP13 = restoreWhen
+export const whenP14 = restoreWhen
+export const whenP15 = restoreWhen
+export const whenP16 = restoreWhen
+export const whenP17 = restoreWhen
+export const whenF = restoreWhen
+
 //!DESC Anime4K-v4.0-Restore-CNN-(VL)-Conv-4x3x3x3
 //!HOOK MAIN
 //!BIND MAIN

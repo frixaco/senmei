@@ -30,6 +30,26 @@ fn tex_off(tex: texture_2d<f32>, base_pos: vec4f, x_off: f32, y_off: f32) -> vec
 }
 `
 
+const upscaleWhen = 'OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *'
+export const whenP1 = upscaleWhen
+export const whenP2 = upscaleWhen
+export const whenP3 = upscaleWhen
+export const whenP4 = upscaleWhen
+export const whenP5 = upscaleWhen
+export const whenP6 = upscaleWhen
+export const whenP7 = upscaleWhen
+export const whenP8 = upscaleWhen
+export const whenP9 = upscaleWhen
+export const whenP10 = upscaleWhen
+export const whenP11 = upscaleWhen
+export const whenP12 = upscaleWhen
+export const whenP13 = upscaleWhen
+export const whenP14 = upscaleWhen
+export const whenP15 = upscaleWhen
+export const whenP16 = upscaleWhen
+export const whenP17 = upscaleWhen
+export const whenF = upscaleWhen
+
 //!DESC Anime4K-v3.2-Upscale-CNN-x2-(VL)-Conv-4x3x3x3
 //!HOOK MAIN
 //!BIND MAIN
