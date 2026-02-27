@@ -83,11 +83,18 @@ interface Anime4KUpscaleVLShaders {
   whenF: string | null
 }
 
-const bindTextureCounts = [0, 2, 4, 6, 8, 10, 12, 14, 17] as const
-
 const passTextureCounts = [
   0, 0, 2, 2, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12, 14, 14, 14,
 ] as const
+
+const makeBindingRange = (start: number, end: number) =>
+  Array.from({ length: end - start + 1 }, (_, index) => start + index)
+
+const passBindingIndices = passTextureCounts.map((count) =>
+  makeBindingRange(2, count + 1),
+)
+
+const finalPassBindingIndices = [16, 17, 18] as const
 
 function setupAnime4KUpscaleVLStage(
   device: GPUDevice,
@@ -215,7 +222,7 @@ function setupAnime4KUpscaleVLStage(
     code: shaders.fragF,
   })
 
-  const createBindGroupLayout = (numTextures: number) =>
+  const createBindGroupLayout = (bindingIndices: readonly number[]) =>
     device.createBindGroupLayout({
       entries: [
         {
@@ -228,36 +235,46 @@ function setupAnime4KUpscaleVLStage(
           visibility: GPUShaderStage.FRAGMENT,
           sampler: { type: 'filtering' as const },
         },
-        ...Array.from({ length: numTextures }, (_, index) => ({
-          binding: index + 2,
+        ...bindingIndices.map((binding) => ({
+          binding,
           visibility: GPUShaderStage.FRAGMENT,
           texture: { sampleType: 'float' as const },
         })),
       ],
     })
 
-  const bindGroupLayouts = new Map<number, GPUBindGroupLayout>()
-  const pipelineLayouts = new Map<number, GPUPipelineLayout>()
-  const bindGroups = new Map<number, GPUBindGroup>()
+  const bindGroupLayouts = new Map<string, GPUBindGroupLayout>()
+  const pipelineLayouts = new Map<string, GPUPipelineLayout>()
+  const bindGroups = new Map<string, GPUBindGroup>()
 
-  for (const count of bindTextureCounts) {
-    const bindGroupLayout = createBindGroupLayout(count)
-    bindGroupLayouts.set(count, bindGroupLayout)
+  const allBindingSets: readonly (readonly number[])[] = [
+    ...passBindingIndices,
+    finalPassBindingIndices,
+  ]
+
+  for (const bindingIndices of allBindingSets) {
+    const key = bindingIndices.join(',')
+    if (bindGroupLayouts.has(key)) {
+      continue
+    }
+
+    const bindGroupLayout = createBindGroupLayout(bindingIndices)
+    bindGroupLayouts.set(key, bindGroupLayout)
     pipelineLayouts.set(
-      count,
+      key,
       device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
     )
     bindGroups.set(
-      count,
+      key,
       device.createBindGroup({
-        label: `${stageLabel} bind group ${count}`,
+        label: `${stageLabel} bind group ${key || 'base'}`,
         layout: bindGroupLayout,
         entries: [
           { binding: 0, resource: inputView },
           { binding: 1, resource: sampler },
-          ...intermediateViews.slice(0, count).map((view, index) => ({
-            binding: index + 2,
-            resource: view,
+          ...bindingIndices.map((binding) => ({
+            binding,
+            resource: intermediateViews[binding - 2]!,
           })),
         ],
       }),
@@ -287,14 +304,14 @@ function setupAnime4KUpscaleVLStage(
   const pipelines = fragmentModules.map((fragmentModule, index) =>
     createPipeline(
       fragmentModule,
-      pipelineLayouts.get(passTextureCounts[index]!)!,
+      pipelineLayouts.get(passBindingIndices[index]!.join(','))!,
       `${stageLabel} pass ${index + 1}`,
     ),
   )
 
   const finalPipeline = createPipeline(
     finalFragmentModule,
-    pipelineLayouts.get(17)!,
+    pipelineLayouts.get(finalPassBindingIndices.join(','))!,
     `${stageLabel} final pass`,
     targetFormat,
   )
@@ -303,7 +320,7 @@ function setupAnime4KUpscaleVLStage(
     enabled: passEnabled[index]!,
     view,
     pipeline: pipelines[index]!,
-    bindGroup: bindGroups.get(passTextureCounts[index]!)!,
+    bindGroup: bindGroups.get(passBindingIndices[index]!.join(','))!,
   }))
 
   return {
@@ -339,7 +356,7 @@ function setupAnime4KUpscaleVLStage(
         ],
       })
       finalPass.setPipeline(finalPipeline)
-      finalPass.setBindGroup(0, bindGroups.get(17))
+      finalPass.setBindGroup(0, bindGroups.get(finalPassBindingIndices.join(','))!)
       finalPass.draw(3)
       finalPass.end()
     },

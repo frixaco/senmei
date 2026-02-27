@@ -5,6 +5,36 @@ import { setupStage4 } from './pipeline/4.ts'
 import { setupStage5 } from './pipeline/5.ts'
 import { setupStage6 } from './pipeline/6.ts'
 
+const presentVertexShader = /* wgsl */ `
+struct VSOut {
+  @builtin(position) pos: vec4f,
+}
+
+@vertex
+fn v(@builtin(vertex_index) vertexIndex: u32) -> VSOut {
+  let pos = array(
+    vec2f(-1, 1),
+    vec2f(4, 1),
+    vec2f(-1, -4),
+  );
+  var out: VSOut;
+  out.pos = vec4f(pos[vertexIndex], 0, 1);
+  return out;
+}
+`
+
+const presentFragmentShader = /* wgsl */ `
+@group(0) @binding(0) var src: texture_2d<f32>;
+@group(0) @binding(1) var srcSampler: sampler;
+
+@fragment
+fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+  let dims = vec2f(textureDimensions(src));
+  let uv = pos.xy / dims;
+  return textureSampleLevel(src, srcSampler, uv, 0.0);
+}
+`
+
 function getElementById<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id)
   if (!element) {
@@ -132,7 +162,6 @@ on('processBtn', 'click', async () => {
     stage5.outputTexture,
     frameSampler,
     whenReference,
-    format,
   )
   const finalStage = stage6
 
@@ -141,6 +170,11 @@ on('processBtn', 'click', async () => {
   canvas.height = finalStage.outputTexture.height
   canvas.style.width = `${bitmap.width}px`
   canvas.style.height = `${bitmap.height}px`
+
+  console.log('Upscale dimensions', {
+    input: `${bitmap.width}x${bitmap.height}`,
+    output: `${canvas.width}x${canvas.height}`,
+  })
 
   const context = canvas.getContext('webgpu')
   if (!context) {
@@ -155,6 +189,72 @@ on('processBtn', 'click', async () => {
   stage3.encode(encoder)
   stage4.encode(encoder)
   stage5.encode(encoder)
-  finalStage.encode(encoder, context.getCurrentTexture().createView())
+  finalStage.encode(encoder)
+
+  const presentBindGroupLayout = device.createBindGroupLayout({
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'float' },
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.FRAGMENT,
+        sampler: { type: 'filtering' },
+      },
+    ],
+  })
+  const presentPipelineLayout = device.createPipelineLayout({
+    bindGroupLayouts: [presentBindGroupLayout],
+  })
+  const presentPipeline = device.createRenderPipeline({
+    label: 'present final texture',
+    layout: presentPipelineLayout,
+    vertex: {
+      module: device.createShaderModule({
+        label: 'present vertex shader',
+        code: presentVertexShader,
+      }),
+      entryPoint: 'v',
+    },
+    fragment: {
+      module: device.createShaderModule({
+        label: 'present fragment shader',
+        code: presentFragmentShader,
+      }),
+      entryPoint: 'f',
+      targets: [{ format }],
+    },
+  })
+  const presentBindGroup = device.createBindGroup({
+    label: 'present bind group',
+    layout: presentBindGroupLayout,
+    entries: [
+      {
+        binding: 0,
+        resource: finalStage.outputTexture.createView(),
+      },
+      {
+        binding: 1,
+        resource: frameSampler,
+      },
+    ],
+  })
+
+  const presentPass = encoder.beginRenderPass({
+    colorAttachments: [
+      {
+        view: context.getCurrentTexture().createView(),
+        loadOp: 'clear',
+        storeOp: 'store',
+      },
+    ],
+  })
+  presentPass.setPipeline(presentPipeline)
+  presentPass.setBindGroup(0, presentBindGroup)
+  presentPass.draw(3)
+  presentPass.end()
+
   device.queue.submit([encoder.finish()])
 })

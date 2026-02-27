@@ -20,11 +20,21 @@ import {
 import { createTexture, vertexShader } from './shared.ts'
 import type { PipelineStage } from './shared.ts'
 
-const bindTextureCounts = [0, 2, 4, 6, 8, 10, 12, 14, 16] as const
-
 const passTextureCounts = [
   0, 0, 2, 2, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12, 14, 14, 16,
 ] as const
+
+const makeBindingRange = (start: number, end: number) =>
+  Array.from({ length: end - start + 1 }, (_, index) => start + index)
+
+const passBindingIndices = passTextureCounts.map((count, passIndex) => {
+  // Pass 17 only uses conv2d_tf_1..conv2d_tf_7_1 (bindings 4..17).
+  if (passIndex === 16) {
+    return makeBindingRange(4, 17)
+  }
+
+  return makeBindingRange(2, count + 1)
+})
 
 const fragmentShaders = [
   fragP1,
@@ -94,7 +104,7 @@ export function setupStage2(
     }),
   )
 
-  const createBindGroupLayout = (numTextures: number) =>
+  const createBindGroupLayout = (bindingIndices: readonly number[]) =>
     device.createBindGroupLayout({
       entries: [
         {
@@ -107,36 +117,41 @@ export function setupStage2(
           visibility: GPUShaderStage.FRAGMENT,
           sampler: { type: 'filtering' as const },
         },
-        ...Array.from({ length: numTextures }, (_, index) => ({
-          binding: index + 2,
+        ...bindingIndices.map((binding) => ({
+          binding,
           visibility: GPUShaderStage.FRAGMENT,
           texture: { sampleType: 'float' as const },
         })),
       ],
     })
 
-  const bindGroupLayouts = new Map<number, GPUBindGroupLayout>()
-  const pipelineLayouts = new Map<number, GPUPipelineLayout>()
-  const bindGroups = new Map<number, GPUBindGroup>()
+  const bindGroupLayouts = new Map<string, GPUBindGroupLayout>()
+  const pipelineLayouts = new Map<string, GPUPipelineLayout>()
+  const bindGroups = new Map<string, GPUBindGroup>()
 
-  for (const count of bindTextureCounts) {
-    const bindGroupLayout = createBindGroupLayout(count)
-    bindGroupLayouts.set(count, bindGroupLayout)
+  for (const bindingIndices of passBindingIndices) {
+    const key = bindingIndices.join(',')
+    if (bindGroupLayouts.has(key)) {
+      continue
+    }
+
+    const bindGroupLayout = createBindGroupLayout(bindingIndices)
+    bindGroupLayouts.set(key, bindGroupLayout)
     pipelineLayouts.set(
-      count,
+      key,
       device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
     )
     bindGroups.set(
-      count,
+      key,
       device.createBindGroup({
-        label: `${stageLabel} bind group ${count}`,
+        label: `${stageLabel} bind group ${key || 'base'}`,
         layout: bindGroupLayout,
         entries: [
           { binding: 0, resource: inputView },
           { binding: 1, resource: sampler },
-          ...intermediateViews.slice(0, count).map((view, index) => ({
-            binding: index + 2,
-            resource: view,
+          ...bindingIndices.map((binding) => ({
+            binding,
+            resource: intermediateViews[binding - 2]!,
           })),
         ],
       }),
@@ -165,7 +180,7 @@ export function setupStage2(
   const pipelines = fragmentModules.map((fragmentModule, index) =>
     createPipeline(
       fragmentModule,
-      pipelineLayouts.get(passTextureCounts[index]!)!,
+      pipelineLayouts.get(passBindingIndices[index]!.join(','))!,
       `${stageLabel} pass ${index + 1}`,
     ),
   )
@@ -173,7 +188,7 @@ export function setupStage2(
   const intermediateRenderPasses = intermediateViews.map((view, index) => ({
     view,
     pipeline: pipelines[index]!,
-    bindGroup: bindGroups.get(passTextureCounts[index]!)!,
+    bindGroup: bindGroups.get(passBindingIndices[index]!.join(','))!,
   }))
 
   return {
@@ -205,7 +220,7 @@ export function setupStage2(
         ],
       })
       finalPass.setPipeline(pipelines[16]!)
-      finalPass.setBindGroup(0, bindGroups.get(16))
+      finalPass.setBindGroup(0, bindGroups.get(passBindingIndices[16]!.join(','))!)
       finalPass.draw(3)
       finalPass.end()
     },
