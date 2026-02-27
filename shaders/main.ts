@@ -130,8 +130,10 @@ on('processBtn', 'click', async () => {
     { width: bitmap.width, height: bitmap.height },
   )
   const sampler = device.createSampler({
-    magFilter: 'linear',
-    minFilter: 'linear',
+    magFilter: 'nearest',
+    minFilter: 'nearest',
+    addressModeU: 'clamp-to-edge',
+    addressModeV: 'clamp-to-edge',
   })
   const bindGroup = device.createBindGroup({
     label: 'upscaler bind group',
