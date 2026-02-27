@@ -62,29 +62,30 @@ export function setupStage2(
   sampler: GPUSampler,
 ): PipelineStage {
   const stageLabel = 'stage2 Anime4K_Restore_CNN_VL'
+  const workingFormat: GPUTextureFormat = 'rgba16float'
   const w = inputTexture.width
   const h = inputTexture.height
 
   const intermediateTextures = [
-    createTexture(device, w, h, `${stageLabel} conv2d_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_1_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_1_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_2_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_2_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_3_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_3_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_4_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_4_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_5_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_5_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_6_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_6_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_7_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_7_tf1`),
+    createTexture(device, w, h, `${stageLabel} conv2d_tf`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_tf1`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_1_tf`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_1_tf1`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_2_tf`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_2_tf1`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_3_tf`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_3_tf1`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_4_tf`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_4_tf1`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_5_tf`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_5_tf1`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_6_tf`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_6_tf1`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_7_tf`, workingFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_7_tf1`, workingFormat),
   ]
 
-  const outputTexture = createTexture(device, w, h, `${stageLabel} output`)
+  const outputTexture = createTexture(device, w, h, `${stageLabel} output`, workingFormat)
 
   const inputView = inputTexture.createView()
   const intermediateViews = intermediateTextures.map((texture) =>
@@ -173,7 +174,7 @@ export function setupStage2(
       fragment: {
         entryPoint: 'f',
         module: fragmentModule,
-        targets: [{ format: 'rgba8unorm' }],
+        targets: [{ format: workingFormat }],
       },
     })
 

@@ -31,7 +31,8 @@ const presentFragmentShader = /* wgsl */ `
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let dims = vec2f(textureDimensions(src));
   let uv = pos.xy / dims;
-  return textureSampleLevel(src, srcSampler, uv, 0.0);
+  let color = textureSampleLevel(src, srcSampler, uv, 0.0);
+  return vec4f(color.rgb, 1.0);
 }
 `
 
@@ -53,6 +54,14 @@ function on(
 }
 
 const original = getElementById<HTMLImageElement>('original')
+const qualityMeta = getElementById<HTMLElement>('qualityMeta')
+
+function toFixed(value: number, digits = 2): string {
+  if (!Number.isFinite(value)) {
+    return 'inf'
+  }
+  return value.toFixed(digits)
+}
 
 let selectedFile: File | null = null
 
@@ -66,6 +75,7 @@ on('inputImg', 'change', (event) => {
   if (!file) {
     selectedFile = null
     original.removeAttribute('src')
+    qualityMeta.textContent = 'No run yet.'
     return
   }
 
@@ -89,6 +99,8 @@ on('processBtn', 'click', async () => {
     console.error('Pick an image first.')
     return
   }
+
+  qualityMeta.textContent = 'Running pipeline...'
 
   if (!('gpu' in navigator)) {
     console.error('WebGPU not supported in this browser.')
@@ -183,6 +195,7 @@ on('processBtn', 'click', async () => {
   }
   context.configure({ device, format })
 
+  const pipelineStart = performance.now()
   const encoder = device.createCommandEncoder({ label: 'pipeline encoder' })
   stage1.encode(encoder)
   stage2.encode(encoder)
@@ -257,4 +270,9 @@ on('processBtn', 'click', async () => {
   presentPass.end()
 
   device.queue.submit([encoder.finish()])
+  await device.queue.onSubmittedWorkDone()
+  const runtimeMs = performance.now() - pipelineStart
+  qualityMeta.textContent =
+    `Upscale complete: ${bitmap.width}x${bitmap.height} -> ` +
+    `${canvas.width}x${canvas.height} in ${toFixed(runtimeMs, 1)} ms.`
 })

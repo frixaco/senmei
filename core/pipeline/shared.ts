@@ -42,10 +42,11 @@ export function createTexture(
   width: number,
   height: number,
   label: string,
+  format: GPUTextureFormat = 'rgba8unorm',
 ): GPUTexture {
   return device.createTexture({
     label,
-    format: 'rgba8unorm',
+    format,
     size: [width, height],
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
   })

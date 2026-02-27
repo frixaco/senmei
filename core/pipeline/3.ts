@@ -103,7 +103,7 @@ function setupAnime4KUpscaleVLStage(
   shaders: Anime4KUpscaleVLShaders,
   stageLabel: string,
   whenReference: WhenReferenceDimensions,
-  targetFormat: GPUTextureFormat = 'rgba8unorm',
+  targetFormat: GPUTextureFormat = 'rgba16float',
 ): PipelineStage {
   const w = inputTexture.width
   const h = inputTexture.height
@@ -163,26 +163,32 @@ function setupAnime4KUpscaleVLStage(
   }
 
   const intermediateTextures = [
-    createTexture(device, w, h, `${stageLabel} conv2d_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_1_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_1_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_2_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_2_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_3_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_3_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_4_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_4_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_5_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_5_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_6_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_6_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_last_tf`),
-    createTexture(device, w, h, `${stageLabel} conv2d_last_tf1`),
-    createTexture(device, w, h, `${stageLabel} conv2d_last_tf2`),
+    createTexture(device, w, h, `${stageLabel} conv2d_tf`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_tf1`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_1_tf`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_1_tf1`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_2_tf`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_2_tf1`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_3_tf`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_3_tf1`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_4_tf`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_4_tf1`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_5_tf`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_5_tf1`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_6_tf`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_6_tf1`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_last_tf`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_last_tf1`, targetFormat),
+    createTexture(device, w, h, `${stageLabel} conv2d_last_tf2`, targetFormat),
   ]
 
-  const outputTexture = createTexture(device, w * 2, h * 2, `${stageLabel} output`)
+  const outputTexture = createTexture(
+    device,
+    w * 2,
+    h * 2,
+    `${stageLabel} output`,
+    targetFormat,
+  )
   const inputView = inputTexture.createView()
   const intermediateViews = intermediateTextures.map((texture) => texture.createView())
   const outputView = outputTexture.createView()
@@ -285,7 +291,7 @@ function setupAnime4KUpscaleVLStage(
     fragmentModule: GPUShaderModule,
     pipelineLayout: GPUPipelineLayout,
     label: string,
-    format: GPUTextureFormat = 'rgba8unorm',
+    format: GPUTextureFormat = targetFormat,
   ) =>
     device.createRenderPipeline({
       label,
@@ -368,7 +374,7 @@ export function setupStage3(
   inputTexture: GPUTexture,
   sampler: GPUSampler,
   whenReference: WhenReferenceDimensions,
-  targetFormat: GPUTextureFormat = 'rgba8unorm',
+  targetFormat: GPUTextureFormat = 'rgba16float',
 ): PipelineStage {
   return setupAnime4KUpscaleVLStage(
     device,

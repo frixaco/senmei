@@ -14,6 +14,7 @@ export function setupStage4(
   sampler: GPUSampler,
   whenReference: WhenReferenceDimensions,
 ): PipelineStage {
+  const workingFormat: GPUTextureFormat = 'rgba16float'
   const shouldRun = evaluateWhenExpression(
     whenF,
     buildWhenContext(
@@ -34,6 +35,7 @@ export function setupStage4(
     inputTexture.width,
     inputTexture.height,
     'stage4 Anime4K_AutoDownscalePre_x2 output',
+    workingFormat,
   )
 
   const moduleV = device.createShaderModule({
@@ -73,7 +75,7 @@ export function setupStage4(
     fragment: {
       module: moduleF,
       entryPoint: 'f',
-      targets: [{ format: 'rgba8unorm' }],
+      targets: [{ format: workingFormat }],
     },
   })
 
