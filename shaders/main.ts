@@ -93,82 +93,350 @@ on('processBtn', 'click', async () => {
     code: shaderCode,
   })
 
-  const pipeline = device.createRenderPipeline({
-    label: 'upscaler pipeline',
-    layout: 'auto',
-    vertex: {
-      entryPoint: 'v',
-      module,
-    },
-    fragment: {
-      entryPoint: 'f',
-      module,
-      targets: [{ format }], // first element - @location(0)
-    },
-  })
-
   // IMAGE TO BITMAP TO TEXTURE
   const bitmap = await createImageBitmap(selectedFile, {
     colorSpaceConversion: 'none',
   })
 
-  canvas.width = bitmap.width
-  canvas.height = bitmap.height
+  canvas.width = bitmap.width * 2
+  canvas.height = bitmap.height * 2
 
-  const texture = device.createTexture({
+  const w = bitmap.width
+  const h = bitmap.height
+
+  const frame = device.createTexture({
     label: 'anime frame',
     format: 'rgba8unorm',
-    size: [bitmap.width, bitmap.height],
+    size: [w, h],
     usage:
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.COPY_DST |
       GPUTextureUsage.RENDER_ATTACHMENT,
   })
   device.queue.copyExternalImageToTexture(
-    { source: bitmap, flipY: false }, // TODO: what if `true`?
-    { texture },
-    { width: bitmap.width, height: bitmap.height },
+    { source: bitmap, flipY: false },
+    { texture: frame },
+    { width: w, height: h },
   )
-  const sampler = device.createSampler({
+
+  const frameSampler = device.createSampler({
     magFilter: 'nearest',
     minFilter: 'nearest',
     addressModeU: 'clamp-to-edge',
     addressModeV: 'clamp-to-edge',
   })
-  const bindGroup = device.createBindGroup({
-    label: 'upscaler bind group',
-    layout: pipeline.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: texture.createView() },
-      { binding: 1, resource: sampler },
-    ],
-  })
 
-  // describe which textured we want to draw to and how to use them
-  const renderPassDescriptor: GPURenderPassDescriptor = {
-    label: 'canvas render pass',
-    // @ts-ignore
-    colorAttachments: [
-      {
-        clearValue: [0.3, 0.3, 0.3, 1],
-        loadOp: 'clear',
-        storeOp: 'store',
+  const createTex = (label: string, width = w, height = h) =>
+    device.createTexture({
+      label,
+      format: 'rgba8unorm',
+      size: [width, height],
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
+    })
+
+  const conv2d_tf = createTex('conv2d_tf')
+  const conv2d_tf_1 = createTex('conv2d_tf_1')
+  const conv2d_tf_2 = createTex('conv2d_tf_2')
+  const conv2d_tf_3 = createTex('conv2d_tf_3')
+  const conv2d_tf_4 = createTex('conv2d_tf_4')
+  const conv2d_tf_5 = createTex('conv2d_tf_5')
+  const conv2d_tf_6 = createTex('conv2d_tf_6')
+  const conv2d_tf_last = createTex('conv2d_tf_last', w * 2, h * 2)
+
+  const createBindGroupLayout = (numTextures: number) =>
+    device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'float' },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.FRAGMENT,
+          sampler: { type: 'filtering' },
+        },
+        ...Array.from({ length: numTextures }, (_, i) => ({
+          binding: i + 2,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'float' as const },
+        })),
+      ],
+    })
+
+  const bindGroupLayouts = [
+    createBindGroupLayout(0), // Pass 1: only frame
+    createBindGroupLayout(1), // Pass 2: frame + conv2d_tf
+    createBindGroupLayout(2), // Pass 3: frame + conv2d_tf + conv2d_tf_1
+    createBindGroupLayout(3), // Pass 4
+    createBindGroupLayout(4), // Pass 5
+    createBindGroupLayout(5), // Pass 6
+    createBindGroupLayout(6), // Pass 7
+    createBindGroupLayout(7), // Pass 8
+    createBindGroupLayout(8), // Pass 9
+  ]
+
+  const createPipeline = (
+    entryPoint: string,
+    layout: GPUPipelineLayout,
+    targetFormat?: GPUTextureFormat,
+  ) =>
+    device.createRenderPipeline({
+      label: `pipeline ${entryPoint}`,
+      layout,
+      vertex: { entryPoint: 'v', module },
+      fragment: {
+        entryPoint,
+        module,
+        targets: [{ format: targetFormat ?? 'rgba8unorm' }],
       },
-    ],
+    })
+
+  const pipelineLayouts = bindGroupLayouts.map((bgl) =>
+    device.createPipelineLayout({ bindGroupLayouts: [bgl] }),
+  )
+
+  const pipelines = {
+    f_1: createPipeline('f_1', pipelineLayouts[0]!),
+    f_2: createPipeline('f_2', pipelineLayouts[1]!),
+    f_3: createPipeline('f_3', pipelineLayouts[2]!),
+    f_4: createPipeline('f_4', pipelineLayouts[3]!),
+    f_5: createPipeline('f_5', pipelineLayouts[4]!),
+    f_6: createPipeline('f_6', pipelineLayouts[5]!),
+    f_7: createPipeline('f_7', pipelineLayouts[6]!),
+    f_final: createPipeline('f_final', pipelineLayouts[7]!),
+    f_finish: createPipeline('f_finish', pipelineLayouts[8]!, format),
   }
 
-  function render() {
-    // @ts-ignore
-    renderPassDescriptor.colorAttachments[0].view = context
-      .getCurrentTexture()
-      .createView()
+  const createBindGroup = (
+    layout: GPUBindGroupLayout,
+    entries: { binding: number; resource: GPUBindingResource }[],
+  ) =>
+    device.createBindGroup({
+      label: `bind group for pass`,
+      layout,
+      entries,
+    })
 
+  const bindGroupPass1 = createBindGroup(bindGroupLayouts[0]!, [
+    { binding: 0, resource: frame.createView() },
+    { binding: 1, resource: frameSampler },
+  ])
+
+  const bindGroupPass2 = createBindGroup(bindGroupLayouts[1]!, [
+    { binding: 0, resource: frame.createView() },
+    { binding: 1, resource: frameSampler },
+    { binding: 2, resource: conv2d_tf.createView() },
+  ])
+
+  const bindGroupPass3 = createBindGroup(bindGroupLayouts[2]!, [
+    { binding: 0, resource: frame.createView() },
+    { binding: 1, resource: frameSampler },
+    { binding: 2, resource: conv2d_tf.createView() },
+    { binding: 3, resource: conv2d_tf_1.createView() },
+  ])
+
+  const bindGroupPass4 = createBindGroup(bindGroupLayouts[3]!, [
+    { binding: 0, resource: frame.createView() },
+    { binding: 1, resource: frameSampler },
+    { binding: 2, resource: conv2d_tf.createView() },
+    { binding: 3, resource: conv2d_tf_1.createView() },
+    { binding: 4, resource: conv2d_tf_2.createView() },
+  ])
+
+  const bindGroupPass5 = createBindGroup(bindGroupLayouts[4]!, [
+    { binding: 0, resource: frame.createView() },
+    { binding: 1, resource: frameSampler },
+    { binding: 2, resource: conv2d_tf.createView() },
+    { binding: 3, resource: conv2d_tf_1.createView() },
+    { binding: 4, resource: conv2d_tf_2.createView() },
+    { binding: 5, resource: conv2d_tf_3.createView() },
+  ])
+
+  const bindGroupPass6 = createBindGroup(bindGroupLayouts[5]!, [
+    { binding: 0, resource: frame.createView() },
+    { binding: 1, resource: frameSampler },
+    { binding: 2, resource: conv2d_tf.createView() },
+    { binding: 3, resource: conv2d_tf_1.createView() },
+    { binding: 4, resource: conv2d_tf_2.createView() },
+    { binding: 5, resource: conv2d_tf_3.createView() },
+    { binding: 6, resource: conv2d_tf_4.createView() },
+  ])
+
+  const bindGroupPass7 = createBindGroup(bindGroupLayouts[6]!, [
+    { binding: 0, resource: frame.createView() },
+    { binding: 1, resource: frameSampler },
+    { binding: 2, resource: conv2d_tf.createView() },
+    { binding: 3, resource: conv2d_tf_1.createView() },
+    { binding: 4, resource: conv2d_tf_2.createView() },
+    { binding: 5, resource: conv2d_tf_3.createView() },
+    { binding: 6, resource: conv2d_tf_4.createView() },
+    { binding: 7, resource: conv2d_tf_5.createView() },
+  ])
+
+  const bindGroupPass8 = createBindGroup(bindGroupLayouts[7]!, [
+    { binding: 0, resource: frame.createView() },
+    { binding: 1, resource: frameSampler },
+    { binding: 2, resource: conv2d_tf.createView() },
+    { binding: 3, resource: conv2d_tf_1.createView() },
+    { binding: 4, resource: conv2d_tf_2.createView() },
+    { binding: 5, resource: conv2d_tf_3.createView() },
+    { binding: 6, resource: conv2d_tf_4.createView() },
+    { binding: 7, resource: conv2d_tf_5.createView() },
+    { binding: 8, resource: conv2d_tf_6.createView() },
+  ])
+
+  const bindGroupPass9 = createBindGroup(bindGroupLayouts[8]!, [
+    { binding: 0, resource: frame.createView() },
+    { binding: 1, resource: frameSampler },
+    { binding: 2, resource: conv2d_tf.createView() },
+    { binding: 3, resource: conv2d_tf_1.createView() },
+    { binding: 4, resource: conv2d_tf_2.createView() },
+    { binding: 5, resource: conv2d_tf_3.createView() },
+    { binding: 6, resource: conv2d_tf_4.createView() },
+    { binding: 7, resource: conv2d_tf_5.createView() },
+    { binding: 8, resource: conv2d_tf_6.createView() },
+    { binding: 9, resource: conv2d_tf_last.createView() },
+  ])
+
+  function render() {
     const encoder = device.createCommandEncoder({ label: 'command encoder' })
-    const pass = encoder.beginRenderPass(renderPassDescriptor)
-    pass.setPipeline(pipeline)
-    pass.setBindGroup(0, bindGroup)
+
+    // Pass 1: f_1 → conv2d_tf
+    let pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: conv2d_tf.createView(),
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    })
+    pass.setPipeline(pipelines.f_1)
+    pass.setBindGroup(0, bindGroupPass1)
     pass.draw(3)
     pass.end()
+
+    // Pass 2: f_2 → conv2d_tf_1
+    pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: conv2d_tf_1.createView(),
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    })
+    pass.setPipeline(pipelines.f_2)
+    pass.setBindGroup(0, bindGroupPass2)
+    pass.draw(3)
+    pass.end()
+
+    // Pass 3: f_3 → conv2d_tf_2
+    pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: conv2d_tf_2.createView(),
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    })
+    pass.setPipeline(pipelines.f_3)
+    pass.setBindGroup(0, bindGroupPass3)
+    pass.draw(3)
+    pass.end()
+
+    // Pass 4: f_4 → conv2d_tf_3
+    pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: conv2d_tf_3.createView(),
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    })
+    pass.setPipeline(pipelines.f_4)
+    pass.setBindGroup(0, bindGroupPass4)
+    pass.draw(3)
+    pass.end()
+
+    // Pass 5: f_5 → conv2d_tf_4
+    pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: conv2d_tf_4.createView(),
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    })
+    pass.setPipeline(pipelines.f_5)
+    pass.setBindGroup(0, bindGroupPass5)
+    pass.draw(3)
+    pass.end()
+
+    // Pass 6: f_6 → conv2d_tf_5
+    pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: conv2d_tf_5.createView(),
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    })
+    pass.setPipeline(pipelines.f_6)
+    pass.setBindGroup(0, bindGroupPass6)
+    pass.draw(3)
+    pass.end()
+
+    // Pass 7: f_7 → conv2d_tf_6
+    pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: conv2d_tf_6.createView(),
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    })
+    pass.setPipeline(pipelines.f_7)
+    pass.setBindGroup(0, bindGroupPass7)
+    pass.draw(3)
+    pass.end()
+
+    // Pass 8: f_final → conv2d_tf_last (2x size)
+    pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: conv2d_tf_last.createView(),
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    })
+    pass.setPipeline(pipelines.f_final)
+    pass.setBindGroup(0, bindGroupPass8)
+    pass.draw(3)
+    pass.end()
+
+    // Pass 9: f_finish → canvas (2x size)
+    const finalPass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: context.getCurrentTexture().createView(),
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    })
+    finalPass.setPipeline(pipelines.f_finish)
+    finalPass.setBindGroup(0, bindGroupPass9)
+    finalPass.draw(3)
+    finalPass.end()
 
     const commandBuffer = encoder.finish()
     device.queue.submit([commandBuffer])
@@ -176,201 +444,5 @@ on('processBtn', 'click', async () => {
 
   render()
 
-  // // square vertice coords
-  // const vertices = new Float32Array([
-  //   -0.8, -0.8, 0.8, -0.8, 0.8, 0.8, 0.8, 0.8, -0.8, 0.8, -0.8, -0.8,
-  // ])
-  //
-  // const vertexBuffer = device.createBuffer({
-  //   label: 'Cell vertices',
-  //   size: vertices.byteLength,
-  //   usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-  // })
-  //
-  // device.queue.writeBuffer(vertexBuffer, /* bufferOffset = */ 0, vertices)
-  //
-  // const vertexBufferLayout: GPUVertexBufferLayout = {
-  //   arrayStride: 8,
-  //   attributes: [
-  //     {
-  //       format: 'float32x2',
-  //       offset: 0,
-  //       shaderLocation: 0, // Position, see vertex shader
-  //     },
-  //   ],
-  // }
-  //
-  //
-  // // Create the bind group layout and pipeline layout.
-  // const bindGroupLayout = device.createBindGroupLayout({
-  //   label: 'Cell Bind Group Layout',
-  //   entries: [
-  //     {
-  //       binding: 0,
-  //       visibility:
-  //         GPUShaderStage.VERTEX |
-  //         GPUShaderStage.FRAGMENT |
-  //         GPUShaderStage.COMPUTE,
-  //       buffer: {}, // Grid uniform buffer
-  //     },
-  //     {
-  //       binding: 1,
-  //       visibility: GPUShaderStage.VERTEX | GPUShaderStage.COMPUTE,
-  //       buffer: { type: 'read-only-storage' }, // Cell state input buffer
-  //     },
-  //     {
-  //       binding: 2,
-  //       visibility: GPUShaderStage.COMPUTE,
-  //       buffer: { type: 'storage' }, // Cell state output buffer
-  //     },
-  //   ],
-  // })
-  //
-  // const pipelineLayout = device.createPipelineLayout({
-  //   label: 'Cell Pipeline Layout',
-  //   bindGroupLayouts: [bindGroupLayout],
-  // })
-  //
-  // const cellPipeline = device.createRenderPipeline({
-  //   label: 'Cell pipeline',
-  //   layout: pipelineLayout,
-  //   vertex: {
-  //     module: cellShaderModule,
-  //     entryPoint: 'vertexMain',
-  //     buffers: [vertexBufferLayout],
-  //   },
-  //   fragment: {
-  //     module: cellShaderModule,
-  //     entryPoint: 'fragmentMain',
-  //     targets: [
-  //       {
-  //         format,
-  //       },
-  //     ],
-  //   },
-  // })
-  //
-  // const UPDATE_INTERVAL = 200 // Update every 200ms (5 times/sec)
-  // let step = 0 // Track how many simulation steps have been run
-  //
-  // const GRID_SIZE = 32
-  // const WORKGROUP_SIZE = 8
-  //
-  // // Create a uniform buffer that describes the grid.
-  // const uniformArray = new Float32Array([GRID_SIZE, GRID_SIZE])
-  // const uniformBuffer = device.createBuffer({
-  //   label: 'Grid Uniforms',
-  //   size: uniformArray.byteLength,
-  //   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  // })
-  // device.queue.writeBuffer(uniformBuffer, 0, uniformArray)
-  //
-  // const cellStateArray = new Uint32Array(GRID_SIZE * GRID_SIZE)
-  // const cellStateStorage = [
-  //   device.createBuffer({
-  //     label: 'Cell State A',
-  //     size: cellStateArray.byteLength,
-  //     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-  //   }),
-  //   device.createBuffer({
-  //     label: 'Cell State B',
-  //     size: cellStateArray.byteLength,
-  //     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-  //   }),
-  // ]
-  // // Mark every third cell of the first grid as active.
-  // for (let i = 0; i < cellStateArray.length; i += 3) {
-  //   cellStateArray[i] = 1
-  // }
-  // device.queue.writeBuffer(cellStateStorage[0]!, 0, cellStateArray)
-  //
-  // // Mark every other cell of the second grid as active.
-  // for (let i = 0; i < cellStateArray.length; i++) {
-  //   cellStateArray[i] = i % 2
-  // }
-  // device.queue.writeBuffer(cellStateStorage[1]!, 0, cellStateArray)
-  //
-  // // Create a bind group to pass the grid uniforms into the pipeline
-  // const bindGroups = [
-  //   device.createBindGroup({
-  //     label: 'Cell renderer bind group A',
-  //     layout: bindGroupLayout, // Updated Line
-  //     entries: [
-  //       {
-  //         binding: 0,
-  //         resource: { buffer: uniformBuffer },
-  //       },
-  //       {
-  //         binding: 1,
-  //         resource: { buffer: cellStateStorage[0]! },
-  //       },
-  //       {
-  //         binding: 2, // New Entry
-  //         resource: { buffer: cellStateStorage[1]! },
-  //       },
-  //     ],
-  //   }),
-  //   device.createBindGroup({
-  //     label: 'Cell renderer bind group B',
-  //     layout: bindGroupLayout, // Updated Line
-  //
-  //     entries: [
-  //       {
-  //         binding: 0,
-  //         resource: { buffer: uniformBuffer },
-  //       },
-  //       {
-  //         binding: 1,
-  //         resource: { buffer: cellStateStorage[1]! },
-  //       },
-  //       {
-  //         binding: 2, // New Entry
-  //         resource: { buffer: cellStateStorage[0]! },
-  //       },
-  //     ],
-  //   }),
-  // ]
-  //
-  // // Create a compute pipeline that updates the game state.
-  // const simulationPipeline = device.createComputePipeline({
-  //   label: 'Simulation pipeline',
-  //   layout: pipelineLayout,
-  //   compute: {
-  //     module: cellShaderModule,
-  //     entryPoint: 'computeMain',
-  //   },
-  // })
-  //
-  // function updateGrid() {
-  //   step++
-  //
-  //   const encoder = device.createCommandEncoder()
-  //   const computePass = encoder.beginComputePass()
-  //   computePass.setPipeline(simulationPipeline)
-  //   computePass.setBindGroup(0, bindGroups[step % 2])
-  //   const workgroupCount = Math.ceil(GRID_SIZE / WORKGROUP_SIZE)
-  //   computePass.dispatchWorkgroups(workgroupCount, workgroupCount)
-  //   computePass.end()
-  //
-  //   const pass = encoder.beginRenderPass({
-  //     colorAttachments: [
-  //       {
-  //         view: context.getCurrentTexture().createView(),
-  //         loadOp: 'clear',
-  //         clearValue: [0, 0.5, 0.7, 1],
-  //         storeOp: 'store',
-  //       },
-  //     ],
-  //   })
-  //
-  //   pass.setPipeline(cellPipeline)
-  //   pass.setVertexBuffer(0, vertexBuffer)
-  //   pass.setBindGroup(0, bindGroups[step % 2])
-  //   pass.draw(vertices.length / 2, GRID_SIZE * GRID_SIZE)
-  //   pass.end()
-  //
-  //   device.queue.submit([encoder.finish()])
-  // }
-  //
-  // setInterval(updateGrid, UPDATE_INTERVAL)
+  console.log(canvas.width, canvas.height)
 })
