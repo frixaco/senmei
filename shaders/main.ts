@@ -100,6 +100,9 @@ on('processBtn', 'click', async () => {
 
   canvas.width = bitmap.width * 2
   canvas.height = bitmap.height * 2
+  // Keep internal render target at 2x, but display at source size for side-by-side comparison.
+  canvas.style.width = `${bitmap.width}px`
+  canvas.style.height = `${bitmap.height}px`
 
   const w = bitmap.width
   const h = bitmap.height
@@ -142,7 +145,8 @@ on('processBtn', 'click', async () => {
   const conv2d_tf_4 = createTex('conv2d_tf_4')
   const conv2d_tf_5 = createTex('conv2d_tf_5')
   const conv2d_tf_6 = createTex('conv2d_tf_6')
-  const conv2d_tf_last = createTex('conv2d_tf_last', w * 2, h * 2)
+  // Keep last feature map at source resolution; f_finish does the 2x pixel shuffle.
+  const conv2d_tf_last = createTex('conv2d_tf_last')
 
   const createBindGroupLayout = (numTextures: number) =>
     device.createBindGroupLayout({

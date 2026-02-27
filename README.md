@@ -11,6 +11,7 @@ A no-slop, hardware-accelerated MKV player with real-time WebGPU Anime4K upscali
   - Anime4K_AutoDownscalePre_x2.glsl
   - Anime4K_AutoDownscalePre_x4.glsl
   - Anime4K_Upscale_CNN_x2_M.glsl
+- [ ] handle !WHEN checks
 
 **Core Pipeline (Native Browser APIs)**
 
