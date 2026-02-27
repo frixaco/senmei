@@ -62,7 +62,7 @@ export function setupStage2(
   sampler: GPUSampler,
 ): PipelineStage {
   const stageLabel = 'stage2 Anime4K_Restore_CNN_VL'
-  const workingFormat: GPUTextureFormat = 'rgba16float'
+  const workingFormat: GPUTextureFormat = 'rgba32float'
   const w = inputTexture.width
   const h = inputTexture.height
 
@@ -111,17 +111,17 @@ export function setupStage2(
         {
           binding: 0,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: 'float' as const },
+          texture: { sampleType: 'unfilterable-float' as const },
         },
         {
           binding: 1,
           visibility: GPUShaderStage.FRAGMENT,
-          sampler: { type: 'filtering' as const },
+          sampler: { type: 'non-filtering' as const },
         },
         ...bindingIndices.map((binding) => ({
           binding,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: 'float' as const },
+          texture: { sampleType: 'unfilterable-float' as const },
         })),
       ],
     })

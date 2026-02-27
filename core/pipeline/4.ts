@@ -14,7 +14,7 @@ export function setupStage4(
   sampler: GPUSampler,
   whenReference: WhenReferenceDimensions,
 ): PipelineStage {
-  const workingFormat: GPUTextureFormat = 'rgba16float'
+  const workingFormat: GPUTextureFormat = 'rgba32float'
   const shouldRun = evaluateWhenExpression(
     whenF,
     buildWhenContext(
@@ -52,12 +52,12 @@ export function setupStage4(
       {
         binding: 0,
         visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: 'float' },
+        texture: { sampleType: 'unfilterable-float' },
       },
       {
         binding: 1,
         visibility: GPUShaderStage.FRAGMENT,
-        sampler: { type: 'filtering' },
+        sampler: { type: 'non-filtering' },
       },
     ],
   })

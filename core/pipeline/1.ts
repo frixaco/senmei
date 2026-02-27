@@ -33,12 +33,13 @@ function setupAnime4KClampHighlightsStage(
   shaders: Anime4KClampHighlightsShaders,
   stageLabel: string,
 ): PipelineStage {
+  const workingFormat: GPUTextureFormat = 'rgba32float'
   const w = inputTexture.width
   const h = inputTexture.height
 
   const statsMaxA = createStatsTexture(device, w, h, `${stageLabel} statsMaxA`)
   const statsMaxB = createStatsTexture(device, w, h, `${stageLabel} statsMaxB`)
-  const outputTexture = createTexture(device, w, h, `${stageLabel} output`)
+  const outputTexture = createTexture(device, w, h, `${stageLabel} output`, workingFormat)
 
   const inputView = inputTexture.createView()
   const statsMaxAView = statsMaxA.createView()
@@ -104,7 +105,7 @@ function setupAnime4KClampHighlightsStage(
     fragmentModule: GPUShaderModule,
     layout: GPUPipelineLayout,
     label: string,
-    targetFormat: GPUTextureFormat = 'rgba8unorm',
+    targetFormat: GPUTextureFormat = workingFormat,
   ) =>
     device.createRenderPipeline({
       label,

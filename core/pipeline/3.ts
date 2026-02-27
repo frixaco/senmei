@@ -103,7 +103,7 @@ function setupAnime4KUpscaleVLStage(
   shaders: Anime4KUpscaleVLShaders,
   stageLabel: string,
   whenReference: WhenReferenceDimensions,
-  targetFormat: GPUTextureFormat = 'rgba16float',
+  targetFormat: GPUTextureFormat = 'rgba32float',
 ): PipelineStage {
   const w = inputTexture.width
   const h = inputTexture.height
@@ -234,17 +234,17 @@ function setupAnime4KUpscaleVLStage(
         {
           binding: 0,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: 'float' as const },
+          texture: { sampleType: 'unfilterable-float' as const },
         },
         {
           binding: 1,
           visibility: GPUShaderStage.FRAGMENT,
-          sampler: { type: 'filtering' as const },
+          sampler: { type: 'non-filtering' as const },
         },
         ...bindingIndices.map((binding) => ({
           binding,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: 'float' as const },
+          texture: { sampleType: 'unfilterable-float' as const },
         })),
       ],
     })
@@ -374,7 +374,7 @@ export function setupStage3(
   inputTexture: GPUTexture,
   sampler: GPUSampler,
   whenReference: WhenReferenceDimensions,
-  targetFormat: GPUTextureFormat = 'rgba16float',
+  targetFormat: GPUTextureFormat = 'rgba32float',
 ): PipelineStage {
   return setupAnime4KUpscaleVLStage(
     device,

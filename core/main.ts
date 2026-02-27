@@ -138,8 +138,6 @@ on('processBtn', 'click', async () => {
   )
 
   const frameSampler = device.createSampler({
-    magFilter: 'nearest',
-    minFilter: 'nearest',
     addressModeU: 'clamp-to-edge',
     addressModeV: 'clamp-to-edge',
   })
@@ -209,12 +207,12 @@ on('processBtn', 'click', async () => {
       {
         binding: 0,
         visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: 'float' },
+        texture: { sampleType: 'unfilterable-float' },
       },
       {
         binding: 1,
         visibility: GPUShaderStage.FRAGMENT,
-        sampler: { type: 'filtering' },
+        sampler: { type: 'non-filtering' },
       },
     ],
   })
