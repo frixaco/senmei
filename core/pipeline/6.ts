@@ -8,9 +8,24 @@ import {
   fragP6,
   fragP7,
   frag8,
+  whenF,
+  whenP1,
+  whenP2,
+  whenP3,
+  whenP4,
+  whenP5,
+  whenP6,
+  whenP7,
+  whenP8,
 } from '../shaders/Anime4K_Upscale_CNN_x2_M.ts'
-import { createTexture, vertexShader } from './shared.ts'
+import {
+  buildWhenContext,
+  createTexture,
+  evaluateWhenExpression,
+  vertexShader,
+} from './shared.ts'
 import type { PipelineStage } from './shared.ts'
+import type { WhenReferenceDimensions } from './shared.ts'
 
 interface Anime4KUpscaleShaders {
   fragP1: string
@@ -22,6 +37,15 @@ interface Anime4KUpscaleShaders {
   fragP7: string
   frag8: string
   fragF: string
+  whenP1: string | null
+  whenP2: string | null
+  whenP3: string | null
+  whenP4: string | null
+  whenP5: string | null
+  whenP6: string | null
+  whenP7: string | null
+  whenP8: string | null
+  whenF: string | null
 }
 
 function setupAnime4KUpscaleStage(
@@ -30,10 +54,35 @@ function setupAnime4KUpscaleStage(
   sampler: GPUSampler,
   shaders: Anime4KUpscaleShaders,
   stageLabel: string,
+  whenReference: WhenReferenceDimensions,
   targetFormat: GPUTextureFormat = 'rgba8unorm',
 ): PipelineStage {
   const w = inputTexture.width
   const h = inputTexture.height
+
+  const whenContext = buildWhenContext({ w, h }, whenReference)
+  const passEnabled = {
+    p1: evaluateWhenExpression(shaders.whenP1, whenContext),
+    p2: evaluateWhenExpression(shaders.whenP2, whenContext),
+    p3: evaluateWhenExpression(shaders.whenP3, whenContext),
+    p4: evaluateWhenExpression(shaders.whenP4, whenContext),
+    p5: evaluateWhenExpression(shaders.whenP5, whenContext),
+    p6: evaluateWhenExpression(shaders.whenP6, whenContext),
+    p7: evaluateWhenExpression(shaders.whenP7, whenContext),
+    p8: evaluateWhenExpression(shaders.whenP8, whenContext),
+    final: evaluateWhenExpression(shaders.whenF, whenContext),
+  }
+
+  if (!passEnabled.final) {
+    return {
+      outputTexture: inputTexture,
+      encode() {},
+    }
+  }
+
+  if (!passEnabled.p8) {
+    throw new Error(`${stageLabel}: final pass requires pass 8 to run`)
+  }
 
   const conv2d_tf = createTexture(device, w, h, `${stageLabel} conv2d_tf`)
   const conv2d_tf_1 = createTexture(device, w, h, `${stageLabel} conv2d_tf_1`)
@@ -262,41 +311,49 @@ function setupAnime4KUpscaleStage(
 
   const renderPasses = [
     {
+      enabled: passEnabled.p1,
       view: conv2d_tf_view,
       pipeline: pipelines.f_1,
       bindGroup: bindGroupPass1,
     },
     {
+      enabled: passEnabled.p2,
       view: conv2d_tf_1_view,
       pipeline: pipelines.f_2,
       bindGroup: bindGroupPass2,
     },
     {
+      enabled: passEnabled.p3,
       view: conv2d_tf_2_view,
       pipeline: pipelines.f_3,
       bindGroup: bindGroupPass3,
     },
     {
+      enabled: passEnabled.p4,
       view: conv2d_tf_3_view,
       pipeline: pipelines.f_4,
       bindGroup: bindGroupPass4,
     },
     {
+      enabled: passEnabled.p5,
       view: conv2d_tf_4_view,
       pipeline: pipelines.f_5,
       bindGroup: bindGroupPass5,
     },
     {
+      enabled: passEnabled.p6,
       view: conv2d_tf_5_view,
       pipeline: pipelines.f_6,
       bindGroup: bindGroupPass6,
     },
     {
+      enabled: passEnabled.p7,
       view: conv2d_tf_6_view,
       pipeline: pipelines.f_7,
       bindGroup: bindGroupPass7,
     },
     {
+      enabled: passEnabled.p8,
       view: conv2d_tf_last_view,
       pipeline: pipelines.f_final,
       bindGroup: bindGroupPass8,
@@ -307,6 +364,10 @@ function setupAnime4KUpscaleStage(
     outputTexture,
     encode(encoder, targetView) {
       for (const renderPassConfig of renderPasses) {
+        if (!renderPassConfig.enabled) {
+          continue
+        }
+
         const pass = encoder.beginRenderPass({
           colorAttachments: [
             {
@@ -322,19 +383,21 @@ function setupAnime4KUpscaleStage(
         pass.end()
       }
 
-      const finalPass = encoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view: targetView ?? outputView,
-            loadOp: 'clear' as const,
-            storeOp: 'store' as const,
-          },
-        ],
-      })
-      finalPass.setPipeline(pipelines.f_finish)
-      finalPass.setBindGroup(0, bindGroupPass9)
-      finalPass.draw(3)
-      finalPass.end()
+      if (passEnabled.final) {
+        const finalPass = encoder.beginRenderPass({
+          colorAttachments: [
+            {
+              view: targetView ?? outputView,
+              loadOp: 'clear' as const,
+              storeOp: 'store' as const,
+            },
+          ],
+        })
+        finalPass.setPipeline(pipelines.f_finish)
+        finalPass.setBindGroup(0, bindGroupPass9)
+        finalPass.draw(3)
+        finalPass.end()
+      }
     },
   }
 }
@@ -343,6 +406,7 @@ export function setupStage6(
   device: GPUDevice,
   inputTexture: GPUTexture,
   sampler: GPUSampler,
+  whenReference: WhenReferenceDimensions,
   targetFormat: GPUTextureFormat = 'rgba8unorm',
 ): PipelineStage {
   return setupAnime4KUpscaleStage(
@@ -359,8 +423,18 @@ export function setupStage6(
       fragP7,
       frag8,
       fragF,
+      whenP1,
+      whenP2,
+      whenP3,
+      whenP4,
+      whenP5,
+      whenP6,
+      whenP7,
+      whenP8,
+      whenF,
     },
     'stage6 Anime4K_Upscale_CNN_x2_M',
+    whenReference,
     targetFormat,
   )
 }

@@ -102,12 +102,33 @@ on('processBtn', 'click', async () => {
     addressModeV: 'clamp-to-edge',
   })
 
+  const whenReference = {
+    native: { w: bitmap.width, h: bitmap.height },
+    output: { w: bitmap.width * 2, h: bitmap.height * 2 },
+  }
+
   const stage1 = setupStage1(device, initialTexture, frameSampler)
   const stage2 = setupStage2(device, stage1.outputTexture, frameSampler)
   const stage3 = setupStage3(device, stage2.outputTexture, frameSampler)
-  const stage4 = setupStage4(device, stage3.outputTexture, frameSampler)
-  const stage5 = setupStage5(device, stage4.outputTexture, frameSampler)
-  const stage6 = setupStage6(device, stage5.outputTexture, frameSampler, format)
+  const stage4 = setupStage4(
+    device,
+    stage3.outputTexture,
+    frameSampler,
+    whenReference,
+  )
+  const stage5 = setupStage5(
+    device,
+    stage4.outputTexture,
+    frameSampler,
+    whenReference,
+  )
+  const stage6 = setupStage6(
+    device,
+    stage5.outputTexture,
+    frameSampler,
+    whenReference,
+    format,
+  )
   const finalStage = stage6
 
   const canvas = getElementById<HTMLCanvasElement>('canvas')

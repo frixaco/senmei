@@ -21,6 +21,17 @@ fn tex_off(tex: texture_2d<f32>, base_pos: vec4f, x_off: f32, y_off: f32) -> vec
 }
 `
 
+const upscaleWhen = 'OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *'
+export const whenP1 = upscaleWhen
+export const whenP2 = upscaleWhen
+export const whenP3 = upscaleWhen
+export const whenP4 = upscaleWhen
+export const whenP5 = upscaleWhen
+export const whenP6 = upscaleWhen
+export const whenP7 = upscaleWhen
+export const whenP8 = upscaleWhen
+export const whenF = upscaleWhen
+
 //!HOOK MAIN
 //!BIND MAIN
 //!SAVE conv2d_tf

@@ -2,6 +2,8 @@
 //!BIND HOOKED
 //!SAVE STATSMAX
 //!COMPONENTS 1
+export const whenP1: string | null = null
+
 const fragSharedP1 = /* wgsl */`
 @group(0) @binding(0) var frame: texture_2d<f32>;
 @group(0) @binding(1) var frame_sampler: sampler;
@@ -42,6 +44,8 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!BIND STATSMAX
 //!SAVE STATSMAX
 //!COMPONENTS 1
+export const whenP2: string | null = null
+
 const fragSharedP2P3 = /* wgsl */`
 @group(0) @binding(0) var frame: texture_2d<f32>;
 @group(0) @binding(1) var frame_sampler: sampler;
@@ -87,6 +91,8 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!HOOK PREKERNEL
 //!BIND HOOKED
 //!BIND STATSMAX
+export const whenP3: string | null = null
+
 export const fragP3 = /* wgsl */`
 ${fragSharedP2P3}
 

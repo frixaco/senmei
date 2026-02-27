@@ -1,12 +1,34 @@
-import { fragF } from '../shaders/Anime4K_AutoDownscalePre_x2.ts'
-import { createTexture, vertexShader } from './shared.ts'
+import { fragF, whenF } from '../shaders/Anime4K_AutoDownscalePre_x2.ts'
+import {
+  buildWhenContext,
+  createTexture,
+  evaluateWhenExpression,
+  vertexShader,
+} from './shared.ts'
 import type { PipelineStage } from './shared.ts'
+import type { WhenReferenceDimensions } from './shared.ts'
 
 export function setupStage4(
   device: GPUDevice,
   inputTexture: GPUTexture,
   sampler: GPUSampler,
+  whenReference: WhenReferenceDimensions,
 ): PipelineStage {
+  const shouldRun = evaluateWhenExpression(
+    whenF,
+    buildWhenContext(
+      { w: inputTexture.width, h: inputTexture.height },
+      whenReference,
+    ),
+  )
+
+  if (!shouldRun) {
+    return {
+      outputTexture: inputTexture,
+      encode() {},
+    }
+  }
+
   const outputTexture = createTexture(
     device,
     inputTexture.width,

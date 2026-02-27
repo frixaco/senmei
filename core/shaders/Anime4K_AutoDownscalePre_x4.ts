@@ -4,6 +4,8 @@
 //!WHEN OUTPUT.w NATIVE.w / 4.0 < OUTPUT.h NATIVE.h / 4.0 < * OUTPUT.w NATIVE.w / 2.4 > OUTPUT.h NATIVE.h / 2.4 > * *
 //!WIDTH OUTPUT.w 2 /
 //!HEIGHT OUTPUT.h 2 /
+export const whenF =
+  'OUTPUT.w NATIVE.w / 4.0 < OUTPUT.h NATIVE.h / 4.0 < * OUTPUT.w NATIVE.w / 2.4 > OUTPUT.h NATIVE.h / 2.4 > * *'
 
 const fragShared = /* wgsl */`
 @group(0) @binding(0) var frame: texture_2d<f32>;
