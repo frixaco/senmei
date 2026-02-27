@@ -4,18 +4,18 @@ const fragShared = /* wgsl */`
 
 @group(0) @binding(2) var conv2d_tf: texture_2d<f32>;
 @group(0) @binding(3) var conv2d_tf1: texture_2d<f32>;
-@group(0) @binding(4) var conv2d_1_tf: texture_2d<f32>;
-@group(0) @binding(5) var conv2d_1_tf1: texture_2d<f32>;
-@group(0) @binding(6) var conv2d_2_tf: texture_2d<f32>;
-@group(0) @binding(7) var conv2d_2_tf1: texture_2d<f32>;
-@group(0) @binding(8) var conv2d_3_tf: texture_2d<f32>;
-@group(0) @binding(9) var conv2d_3_tf1: texture_2d<f32>;
-@group(0) @binding(10) var conv2d_4_tf: texture_2d<f32>;
-@group(0) @binding(11) var conv2d_4_tf1: texture_2d<f32>;
-@group(0) @binding(12) var conv2d_5_tf: texture_2d<f32>;
-@group(0) @binding(13) var conv2d_5_tf1: texture_2d<f32>;
-@group(0) @binding(14) var conv2d_6_tf: texture_2d<f32>;
-@group(0) @binding(15) var conv2d_6_tf1: texture_2d<f32>;
+@group(0) @binding(4) var conv2d_tf_1: texture_2d<f32>;
+@group(0) @binding(5) var conv2d_tf_1_1: texture_2d<f32>;
+@group(0) @binding(6) var conv2d_tf_2: texture_2d<f32>;
+@group(0) @binding(7) var conv2d_tf_2_1: texture_2d<f32>;
+@group(0) @binding(8) var conv2d_tf_3: texture_2d<f32>;
+@group(0) @binding(9) var conv2d_tf_3_1: texture_2d<f32>;
+@group(0) @binding(10) var conv2d_tf_4: texture_2d<f32>;
+@group(0) @binding(11) var conv2d_tf_4_1: texture_2d<f32>;
+@group(0) @binding(12) var conv2d_tf_5: texture_2d<f32>;
+@group(0) @binding(13) var conv2d_tf_5_1: texture_2d<f32>;
+@group(0) @binding(14) var conv2d_tf_6: texture_2d<f32>;
+@group(0) @binding(15) var conv2d_tf_6_1: texture_2d<f32>;
 @group(0) @binding(16) var conv2d_last_tf: texture_2d<f32>;
 @group(0) @binding(17) var conv2d_last_tf1: texture_2d<f32>;
 @group(0) @binding(18) var conv2d_last_tf2: texture_2d<f32>;
@@ -257,16 +257,16 @@ export const fragP5 = /* wgsl */`
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_1_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_1, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_1(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_1_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_1_1, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_2(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_1_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_1, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_3(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_1_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_1_1, pos, x_off, y_off), vec4f(0.0));
 }
 @fragment
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
@@ -324,16 +324,16 @@ export const fragP6 = /* wgsl */`
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_1_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_1, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_1(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_1_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_1_1, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_2(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_1_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_1, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_3(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_1_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_1_1, pos, x_off, y_off), vec4f(0.0));
 }
 @fragment
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
@@ -391,16 +391,16 @@ export const fragP7 = /* wgsl */`
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_2_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_2, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_1(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_2_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_2_1, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_2(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_2_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_2, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_3(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_2_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_2_1, pos, x_off, y_off), vec4f(0.0));
 }
 @fragment
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
@@ -458,16 +458,16 @@ export const fragP8 = /* wgsl */`
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_2_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_2, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_1(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_2_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_2_1, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_2(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_2_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_2, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_3(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_2_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_2_1, pos, x_off, y_off), vec4f(0.0));
 }
 @fragment
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
@@ -525,16 +525,16 @@ export const fragP9 = /* wgsl */`
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_3_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_3, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_1(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_3_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_3_1, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_2(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_3_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_3, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_3(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_3_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_3_1, pos, x_off, y_off), vec4f(0.0));
 }
 @fragment
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
@@ -592,16 +592,16 @@ export const fragP10 = /* wgsl */`
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_3_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_3, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_1(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_3_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_3_1, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_2(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_3_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_3, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_3(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_3_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_3_1, pos, x_off, y_off), vec4f(0.0));
 }
 @fragment
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
@@ -659,16 +659,16 @@ export const fragP11 = /* wgsl */`
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_4_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_4, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_1(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_4_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_4_1, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_2(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_4_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_4, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_3(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_4_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_4_1, pos, x_off, y_off), vec4f(0.0));
 }
 @fragment
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
@@ -726,16 +726,16 @@ export const fragP12 = /* wgsl */`
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_4_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_4, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_1(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_4_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_4_1, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_2(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_4_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_4, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_3(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_4_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_4_1, pos, x_off, y_off), vec4f(0.0));
 }
 @fragment
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
@@ -793,16 +793,16 @@ export const fragP13 = /* wgsl */`
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_5_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_5, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_1(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_5_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_5_1, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_2(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_5_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_5, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_3(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_5_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_5_1, pos, x_off, y_off), vec4f(0.0));
 }
 @fragment
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
@@ -860,16 +860,16 @@ export const fragP14 = /* wgsl */`
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_5_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_5, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_1(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(tex_off(conv2d_5_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(tex_off(conv2d_tf_5_1, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_2(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_5_tf, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_5, pos, x_off, y_off), vec4f(0.0));
 }
 fn go_3(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
-	return max(-tex_off(conv2d_5_tf1, pos, x_off, y_off), vec4f(0.0));
+	return max(-tex_off(conv2d_tf_5_1, pos, x_off, y_off), vec4f(0.0));
 }
 @fragment
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
@@ -944,30 +944,30 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     let g_1 = max(tex_off(conv2d_tf1, pos, 0.0, 0.0), vec4f(0.0));
     let g_2 = max(-tex_off(conv2d_tf, pos, 0.0, 0.0), vec4f(0.0));
     let g_3 = max(-tex_off(conv2d_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_4 = max(tex_off(conv2d_1_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_5 = max(tex_off(conv2d_1_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_6 = max(-tex_off(conv2d_1_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_7 = max(-tex_off(conv2d_1_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_8 = max(tex_off(conv2d_2_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_9 = max(tex_off(conv2d_2_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_10 = max(-tex_off(conv2d_2_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_11 = max(-tex_off(conv2d_2_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_12 = max(tex_off(conv2d_3_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_13 = max(tex_off(conv2d_3_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_14 = max(-tex_off(conv2d_3_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_15 = max(-tex_off(conv2d_3_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_16 = max(tex_off(conv2d_4_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_17 = max(tex_off(conv2d_4_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_18 = max(-tex_off(conv2d_4_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_19 = max(-tex_off(conv2d_4_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_20 = max(tex_off(conv2d_5_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_21 = max(tex_off(conv2d_5_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_22 = max(-tex_off(conv2d_5_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_23 = max(-tex_off(conv2d_5_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_24 = max(tex_off(conv2d_6_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_25 = max(tex_off(conv2d_6_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_26 = max(-tex_off(conv2d_6_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_27 = max(-tex_off(conv2d_6_tf1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_4 = max(tex_off(conv2d_tf_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_5 = max(tex_off(conv2d_tf_1_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_6 = max(-tex_off(conv2d_tf_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_7 = max(-tex_off(conv2d_tf_1_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_8 = max(tex_off(conv2d_tf_2, pos, 0.0, 0.0), vec4f(0.0));
+    let g_9 = max(tex_off(conv2d_tf_2_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_10 = max(-tex_off(conv2d_tf_2, pos, 0.0, 0.0), vec4f(0.0));
+    let g_11 = max(-tex_off(conv2d_tf_2_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_12 = max(tex_off(conv2d_tf_3, pos, 0.0, 0.0), vec4f(0.0));
+    let g_13 = max(tex_off(conv2d_tf_3_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_14 = max(-tex_off(conv2d_tf_3, pos, 0.0, 0.0), vec4f(0.0));
+    let g_15 = max(-tex_off(conv2d_tf_3_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_16 = max(tex_off(conv2d_tf_4, pos, 0.0, 0.0), vec4f(0.0));
+    let g_17 = max(tex_off(conv2d_tf_4_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_18 = max(-tex_off(conv2d_tf_4, pos, 0.0, 0.0), vec4f(0.0));
+    let g_19 = max(-tex_off(conv2d_tf_4_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_20 = max(tex_off(conv2d_tf_5, pos, 0.0, 0.0), vec4f(0.0));
+    let g_21 = max(tex_off(conv2d_tf_5_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_22 = max(-tex_off(conv2d_tf_5, pos, 0.0, 0.0), vec4f(0.0));
+    let g_23 = max(-tex_off(conv2d_tf_5_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_24 = max(tex_off(conv2d_tf_6, pos, 0.0, 0.0), vec4f(0.0));
+    let g_25 = max(tex_off(conv2d_tf_6_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_26 = max(-tex_off(conv2d_tf_6, pos, 0.0, 0.0), vec4f(0.0));
+    let g_27 = max(-tex_off(conv2d_tf_6_1, pos, 0.0, 0.0), vec4f(0.0));
 
     var result = mat4x4f(-0.11498094, -0.053904895, -0.11520678, -0.05479549, 0.028396055, 0.032767884, 0.052479446, 0.05257866, -0.25706592, -0.3454966, -0.24713765, -0.2854201, -0.10287636, 0.0023146886, -0.09190338, -0.011193905) * g_0;
     result += mat4x4f(-0.05461422, 0.008780496, -0.07738697, -0.032230727, -0.047554165, -0.025061952, -0.051897213, -0.009545297, -0.14548294, -0.15184018, -0.01313442, -0.015299784, -0.0007883845, -0.12866738, -0.15260352, -0.27081275) * g_1;
@@ -1032,30 +1032,30 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     let g_1 = max(tex_off(conv2d_tf1, pos, 0.0, 0.0), vec4f(0.0));
     let g_2 = max(-tex_off(conv2d_tf, pos, 0.0, 0.0), vec4f(0.0));
     let g_3 = max(-tex_off(conv2d_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_4 = max(tex_off(conv2d_1_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_5 = max(tex_off(conv2d_1_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_6 = max(-tex_off(conv2d_1_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_7 = max(-tex_off(conv2d_1_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_8 = max(tex_off(conv2d_2_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_9 = max(tex_off(conv2d_2_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_10 = max(-tex_off(conv2d_2_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_11 = max(-tex_off(conv2d_2_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_12 = max(tex_off(conv2d_3_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_13 = max(tex_off(conv2d_3_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_14 = max(-tex_off(conv2d_3_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_15 = max(-tex_off(conv2d_3_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_16 = max(tex_off(conv2d_4_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_17 = max(tex_off(conv2d_4_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_18 = max(-tex_off(conv2d_4_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_19 = max(-tex_off(conv2d_4_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_20 = max(tex_off(conv2d_5_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_21 = max(tex_off(conv2d_5_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_22 = max(-tex_off(conv2d_5_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_23 = max(-tex_off(conv2d_5_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_24 = max(tex_off(conv2d_6_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_25 = max(tex_off(conv2d_6_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_26 = max(-tex_off(conv2d_6_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_27 = max(-tex_off(conv2d_6_tf1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_4 = max(tex_off(conv2d_tf_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_5 = max(tex_off(conv2d_tf_1_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_6 = max(-tex_off(conv2d_tf_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_7 = max(-tex_off(conv2d_tf_1_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_8 = max(tex_off(conv2d_tf_2, pos, 0.0, 0.0), vec4f(0.0));
+    let g_9 = max(tex_off(conv2d_tf_2_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_10 = max(-tex_off(conv2d_tf_2, pos, 0.0, 0.0), vec4f(0.0));
+    let g_11 = max(-tex_off(conv2d_tf_2_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_12 = max(tex_off(conv2d_tf_3, pos, 0.0, 0.0), vec4f(0.0));
+    let g_13 = max(tex_off(conv2d_tf_3_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_14 = max(-tex_off(conv2d_tf_3, pos, 0.0, 0.0), vec4f(0.0));
+    let g_15 = max(-tex_off(conv2d_tf_3_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_16 = max(tex_off(conv2d_tf_4, pos, 0.0, 0.0), vec4f(0.0));
+    let g_17 = max(tex_off(conv2d_tf_4_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_18 = max(-tex_off(conv2d_tf_4, pos, 0.0, 0.0), vec4f(0.0));
+    let g_19 = max(-tex_off(conv2d_tf_4_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_20 = max(tex_off(conv2d_tf_5, pos, 0.0, 0.0), vec4f(0.0));
+    let g_21 = max(tex_off(conv2d_tf_5_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_22 = max(-tex_off(conv2d_tf_5, pos, 0.0, 0.0), vec4f(0.0));
+    let g_23 = max(-tex_off(conv2d_tf_5_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_24 = max(tex_off(conv2d_tf_6, pos, 0.0, 0.0), vec4f(0.0));
+    let g_25 = max(tex_off(conv2d_tf_6_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_26 = max(-tex_off(conv2d_tf_6, pos, 0.0, 0.0), vec4f(0.0));
+    let g_27 = max(-tex_off(conv2d_tf_6_1, pos, 0.0, 0.0), vec4f(0.0));
 
     var result = mat4x4f(0.024905335, -0.0020974763, 0.02695263, 0.00016802056, -0.024053082, -0.02133723, -0.031614035, -0.031826317, 0.120421864, 0.10555479, 0.08609448, 0.116875134, 0.046175968, 0.04224941, 0.059216674, 0.035143953) * g_0;
     result += mat4x4f(0.059397914, 0.016519934, 0.07189327, 0.047407165, 0.04808963, 0.02792908, 0.057017103, 0.034324065, 0.14228246, 0.11275426, 0.088058695, 0.059600517, 0.02063494, 0.052596953, 0.047207687, 0.08789091) * g_1;
@@ -1120,30 +1120,30 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     let g_1 = max(tex_off(conv2d_tf1, pos, 0.0, 0.0), vec4f(0.0));
     let g_2 = max(-tex_off(conv2d_tf, pos, 0.0, 0.0), vec4f(0.0));
     let g_3 = max(-tex_off(conv2d_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_4 = max(tex_off(conv2d_1_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_5 = max(tex_off(conv2d_1_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_6 = max(-tex_off(conv2d_1_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_7 = max(-tex_off(conv2d_1_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_8 = max(tex_off(conv2d_2_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_9 = max(tex_off(conv2d_2_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_10 = max(-tex_off(conv2d_2_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_11 = max(-tex_off(conv2d_2_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_12 = max(tex_off(conv2d_3_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_13 = max(tex_off(conv2d_3_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_14 = max(-tex_off(conv2d_3_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_15 = max(-tex_off(conv2d_3_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_16 = max(tex_off(conv2d_4_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_17 = max(tex_off(conv2d_4_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_18 = max(-tex_off(conv2d_4_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_19 = max(-tex_off(conv2d_4_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_20 = max(tex_off(conv2d_5_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_21 = max(tex_off(conv2d_5_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_22 = max(-tex_off(conv2d_5_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_23 = max(-tex_off(conv2d_5_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_24 = max(tex_off(conv2d_6_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_25 = max(tex_off(conv2d_6_tf1, pos, 0.0, 0.0), vec4f(0.0));
-    let g_26 = max(-tex_off(conv2d_6_tf, pos, 0.0, 0.0), vec4f(0.0));
-    let g_27 = max(-tex_off(conv2d_6_tf1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_4 = max(tex_off(conv2d_tf_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_5 = max(tex_off(conv2d_tf_1_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_6 = max(-tex_off(conv2d_tf_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_7 = max(-tex_off(conv2d_tf_1_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_8 = max(tex_off(conv2d_tf_2, pos, 0.0, 0.0), vec4f(0.0));
+    let g_9 = max(tex_off(conv2d_tf_2_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_10 = max(-tex_off(conv2d_tf_2, pos, 0.0, 0.0), vec4f(0.0));
+    let g_11 = max(-tex_off(conv2d_tf_2_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_12 = max(tex_off(conv2d_tf_3, pos, 0.0, 0.0), vec4f(0.0));
+    let g_13 = max(tex_off(conv2d_tf_3_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_14 = max(-tex_off(conv2d_tf_3, pos, 0.0, 0.0), vec4f(0.0));
+    let g_15 = max(-tex_off(conv2d_tf_3_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_16 = max(tex_off(conv2d_tf_4, pos, 0.0, 0.0), vec4f(0.0));
+    let g_17 = max(tex_off(conv2d_tf_4_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_18 = max(-tex_off(conv2d_tf_4, pos, 0.0, 0.0), vec4f(0.0));
+    let g_19 = max(-tex_off(conv2d_tf_4_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_20 = max(tex_off(conv2d_tf_5, pos, 0.0, 0.0), vec4f(0.0));
+    let g_21 = max(tex_off(conv2d_tf_5_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_22 = max(-tex_off(conv2d_tf_5, pos, 0.0, 0.0), vec4f(0.0));
+    let g_23 = max(-tex_off(conv2d_tf_5_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_24 = max(tex_off(conv2d_tf_6, pos, 0.0, 0.0), vec4f(0.0));
+    let g_25 = max(tex_off(conv2d_tf_6_1, pos, 0.0, 0.0), vec4f(0.0));
+    let g_26 = max(-tex_off(conv2d_tf_6, pos, 0.0, 0.0), vec4f(0.0));
+    let g_27 = max(-tex_off(conv2d_tf_6_1, pos, 0.0, 0.0), vec4f(0.0));
 
     var result = mat4x4f(0.1765669, 0.14268716, 0.19186598, 0.15799578, 0.016374417, 0.018578433, 0.0039475, 0.0046772263, 0.39840183, 0.36909792, 0.35409746, 0.37422222, -0.108508386, -0.1331279, -0.10336035, -0.14776541) * g_0;
     result += mat4x4f(-0.057757027, -0.14071062, -0.025283009, -0.09397916, -0.09031894, -0.14219165, -0.08299535, -0.13970287, -0.12259208, -0.14382727, -0.22002274, -0.25016093, -0.048906635, 0.06620249, 0.016965045, 0.1295978) * g_1;
