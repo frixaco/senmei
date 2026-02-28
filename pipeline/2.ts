@@ -63,6 +63,7 @@ export function setupStage2(
 ): PipelineStage {
   const stageLabel = 'stage2 Anime4K_Restore_CNN_VL'
   const workingFormat: GPUTextureFormat = 'rgba32float'
+  // const workingFormat: GPUTextureFormat = 'rgba16float'
   const w = inputTexture.width
   const h = inputTexture.height
 

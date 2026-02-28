@@ -1,17 +1,29 @@
-# Senmei - watch anime upscaled to 4K in your browser
+# Senmei - watch anime in real-time, upscaled to 4K, in your browser
 
-A no-slop, hardware-accelerated MKV player with real-time WebGPU Anime4K upscaling.
+- MKV video player with essential features like play/pause, seek, streaming from URL (potentially, MP4)
+  - video: H.264/AVC (8-bit) and HEVC/H.265 (8/10-bit)
+  - audio: AAC (potentially, OPUS and FLAC) stereo
+- upscaling done with WebGPU using in multi-stage, multi-pass render pipeline (PoC done)
+- subtitle support (positioning supported, styling is not supported)
+
+### Dependencies
+
+- [Anime4K](https://github.com/bloc97/Anime4K) - High-End HQ Mode A preset (for now) - confirmed
+- Chromium-based browser - confirmed
+- [mediabunny](https://github.com/Vanilagy/mediabunny) - demuxing, seeking - not confirmed
+- `WebCodecs`, `AudioWorklet`, `Web Worker`
+- `WebGPU`, `WGSL/GLSL` shaders
+- [typegpu](https://github.com/software-mansion/TypeGPU) - easier to work with WGSL shaders - not confirmed
 
 ### TODO
 
-- [ ] Port following shaders to WGSL:
-  - [ ] Anime4K_Clamp_Highlights.glsl
-  - [ ] Anime4K_Restore_CNN_VL.glsl
-  - [ ] Anime4K_Upscale_CNN_x2_VL.glsl
-  - [ ] Anime4K_AutoDownscalePre_x2.glsl
-  - [ ] Anime4K_AutoDownscalePre_x4.glsl
-  - [ ] Anime4K_Upscale_CNN_x2_M.glsl
-- [ ] handle !WHEN checks
+- [x] Port following shaders to WGSL:
+  - [x] Anime4K_Clamp_Highlights.glsl
+  - [x] Anime4K_Restore_CNN_VL.glsl
+  - [x] Anime4K_Upscale_CNN_x2_VL.glsl
+  - [x] Anime4K_AutoDownscalePre_x2.glsl
+  - [x] Anime4K_AutoDownscalePre_x4.glsl
+  - [x] Anime4K_Upscale_CNN_x2_M.glsl
 - [ ] Full parity checklist vs Anime4K GLSL `Ctrl+1 (HQ)`:
   - [ ] derive `OUTPUT` from real render target size (canvas/backbuffer), not fixed `input * 2`
   - [ ] rebuild/rebind pipeline stages when `OUTPUT` changes (resize/fullscreen/DPR change)
@@ -22,96 +34,13 @@ A no-slop, hardware-accelerated MKV player with real-time WebGPU Anime4K upscali
   - [ ] evaluate each pass `!WHEN` using GLSL context semantics (`MAIN`, `NATIVE`, `OUTPUT`) at runtime
   - [ ] parity test matrix against mpv pass activation: `1x`, `1.5x`, `2x`, `3x`, `4x`
 
-**Core Pipeline (Native Browser APIs)**
-
-- **WebCodecs:** for hardware-accelerated H.264/HEVC/AAC/H.265/10-bit decoding.
-- **WebGPU:** for running ported WGSL Anime4K shaders
-- **Web Audio API (`AudioWorklet`):** for audio playback and serving as the master clock for A/V sync.
-- **Web Workers:** To move all network fetching and binary demuxing off the main UI thread.
-
-**Dependencies**
-
-- **`mediabunny`:** For lazy, chunked MKV/EBML parsing and seeking. Extracts encoded packets without loading the whole file into memory.
-- (not sure) **`typegpu`:** To construct the Anime4K WebGPU render graph in a heavily typed, developer-friendly way (replacing raw WGSL string concatenation with TypeScript safety).
-
-**Build & UI**
-
-- **TypeScript:** - Rust + WASM wasn't an option, unfortunately.
-- (not sure, might go for vanilla JS/CSS) **Tanstack Start:** Custom video controls, seek bar, and subtitle overlays.
-
----
-
-### Scope
-
-**1. Input & Streaming**
-
-- Accepts a direct file URL or stream URL.
-- **Must** support HTTP `Range` requests (`206 Partial Content`) to allow Mediabunny to lazily fetch chunks and seek without downloading the whole 1.5GB file.
-
-**2. Video & Audio Support**
-
-- **Video:** H.264 (AVC) 8-bit, and HEVC 8-bit / 10-bit.
-  - _Hardware-Check:_ Player will query `VideoDecoder.isConfigSupported()` before playback. If the GPU doesn't support the codec (e.g., software-only 10-bit), it gracefully shows a "Hardware Not Supported" error.
-- **Audio:** AAC Stereo.
-- **Sync:** Custom A/V sync engine using the audio track as the master clock, dropping late video frames to maintain sync.
-
-**3. Subtitles (The "Plain Text" Hack)**
-
-- Extracts ASS subtitle packets via Mediabunny.
-- Strips all `{...}` styling tags.
-- Renders English text in a plain DOM `<div>` overlayed on the canvas.
-- Supports basic positioning: Default is bottom-center; `\an8` tags place text at top-center.
-
-**4. Anime4K Upscaling Pipeline**
-
-- Takes decoded 1080p `VideoFrame` objects.
-- Uses `typegpu` to run a 2-to-4 pass Anime4K WGSL shader pipeline.
-- Outputs the finalized, upscaled frame to a 4K (`3840x2160`) WebGPU `<canvas>`.
-
-**5. Playback Controls**
-
-- Play / Pause / Volume.
-- Scrub bar with seeking.
-- +/- 10-second quick jump buttons.
-- (Seeking architecture flushes WebCodecs, finds nearest keyframe via Mediabunny, and decodes forward to the target timestamp).
-
-**6. "Nerd Stats" Overlay (UI Metrics)**
-
-- Render FPS vs Video FPS.
-- Network Buffer Health (MB/s).
-- Video frames dropped / decoded.
-- Approximate memory usage (`performance.memory` tracking the 175MB target).
-
----
-
-### Out of Scope
-
-- **No Software Decoding Fallback:** If the GPU can't play it, the player doesn't play it.
-- **No 10-bit H.264 (Hi10P):** Instantly rejected by the hardware checker.
-- **No ASS Styling Engine:** No fonts, colors, karaoke, or vector shapes.
-- **No Playback Rate/Pitch Shifting:** 1.0x speed only.
-- **No Track Switching:** Auto-selects the first video, first (JP) audio.
-
----
-
-### Memory goal: under 175MB
-
-1.  **Network Worker:** Mediabunny requests `Range: bytes=0-1000000` from the VPS.
-2.  **Demux Layer:** Mediabunny parses the MKV Cluster and yields `EncodedPacket` objects.
-3.  **Backpressure Check:** If the WebCodecs queue has > 10 frames, pause fetching.
-4.  **Hardware Decode:** Packets are fed to `VideoDecoder`.
-5.  **Thread Transfer:** The decoder yields a `VideoFrame`. It is instantly transferred (`postMessage({ frame }, [frame])`) to the Main Thread (zero-copy).
-6.  **GPU Render (TypeGPU):** Main Thread binds the `VideoFrame` to an `external_texture`. TypeGPU dispatches the Anime4K compute passes.
-7.  **The Golden Rule:** The exact millisecond `device.queue.submit()` is called, you execute `frame.close()`. _If you miss this step, memory spikes to 1GB in 5 seconds._
-
-## IDEAS
+## Side Quests
 
 ### Current project rating: 6/7
 
 You are combining **low-level binary streaming** (Mediabunny), **advanced threading** (Workers + AudioWorklets), **strict memory management** (GC avoidance, backpressure), and **modern GPU graphics programming** (TypeGPU + WGSL Anime4K) into a single, cohesive, dependency-light web app.
 
 It is a perfect showcase of Full-Stack Web Systems engineering.
-
 
 ### Option 1: Lock-Free SharedArrayBuffer + Atomics Pipeline (Zero GC)
 
