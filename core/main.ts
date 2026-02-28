@@ -4,6 +4,7 @@ import { setupStage3 } from './pipeline/3.ts'
 import { setupStage4 } from './pipeline/4.ts'
 import { setupStage5 } from './pipeline/5.ts'
 import { setupStage6 } from './pipeline/6.ts'
+import { convertRgba16FloatBitsToUint16, encodeRgba16Png } from './png16.ts'
 
 const presentVertexShader = /* wgsl */ `
 struct VSOut {
@@ -85,8 +86,8 @@ async function exportSavedOutputToBlob(output: SavedOutput): Promise<Blob> {
   const { device, texture, sampler, width, height } = output
 
   const exportTexture = device.createTexture({
-    label: 'export texture rgba8',
-    format: 'rgba8unorm',
+    label: 'export texture rgba16float',
+    format: 'rgba16float',
     size: [width, height],
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   })
@@ -124,7 +125,7 @@ async function exportSavedOutputToBlob(output: SavedOutput): Promise<Blob> {
         code: presentFragmentShader,
       }),
       entryPoint: 'f',
-      targets: [{ format: 'rgba8unorm' }],
+      targets: [{ format: 'rgba16float' }],
     },
   })
   const bindGroup = device.createBindGroup({
@@ -136,7 +137,7 @@ async function exportSavedOutputToBlob(output: SavedOutput): Promise<Blob> {
     ],
   })
 
-  const bytesPerPixel = 4
+  const bytesPerPixel = 8
   const unpaddedBytesPerRow = width * bytesPerPixel
   const paddedBytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256
   const readbackSize = paddedBytesPerRow * height
@@ -177,14 +178,16 @@ async function exportSavedOutputToBlob(output: SavedOutput): Promise<Blob> {
   await device.queue.onSubmittedWorkDone()
 
   await readbackBuffer.mapAsync(GPUMapMode.READ)
-  const mapped = new Uint8Array(readbackBuffer.getMappedRange())
-  const packed = new Uint8ClampedArray(unpaddedBytesPerRow * height)
+  const mapped = new Uint16Array(readbackBuffer.getMappedRange())
+  const paddedWordsPerRow = paddedBytesPerRow / 2
+  const unpaddedWordsPerRow = unpaddedBytesPerRow / 2
+  const packedHalfFloat = new Uint16Array(unpaddedWordsPerRow * height)
 
   for (let y = 0; y < height; y += 1) {
-    const srcOffset = y * paddedBytesPerRow
-    const dstOffset = y * unpaddedBytesPerRow
-    packed.set(
-      mapped.subarray(srcOffset, srcOffset + unpaddedBytesPerRow),
+    const srcOffset = y * paddedWordsPerRow
+    const dstOffset = y * unpaddedWordsPerRow
+    packedHalfFloat.set(
+      mapped.subarray(srcOffset, srcOffset + unpaddedWordsPerRow),
       dstOffset,
     )
   }
@@ -192,25 +195,8 @@ async function exportSavedOutputToBlob(output: SavedOutput): Promise<Blob> {
   readbackBuffer.unmap()
   readbackBuffer.destroy()
   exportTexture.destroy()
-
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const context = canvas.getContext('2d')
-  if (!context) {
-    throw new Error('Failed to create export canvas context')
-  }
-  const imageData = new ImageData(packed, width, height)
-  context.putImageData(imageData, 0, 0)
-
-  const blob = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(resolve, 'image/png')
-  })
-  if (!blob) {
-    throw new Error('Failed to encode PNG')
-  }
-
-  return blob
+  const png16Rgba = convertRgba16FloatBitsToUint16(packedHalfFloat)
+  return encodeRgba16Png(width, height, png16Rgba)
 }
 
 on('inputImg', 'change', (event) => {
