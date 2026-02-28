@@ -55,6 +55,16 @@ function on(
 
 const original = getElementById<HTMLImageElement>('original')
 const qualityMeta = getElementById<HTMLElement>('qualityMeta')
+const saveBtn = getElementById<HTMLButtonElement>('saveBtn')
+
+interface SavedOutput {
+  device: GPUDevice
+  texture: GPUTexture
+  sampler: GPUSampler
+  width: number
+  height: number
+  sourceName: string
+}
 
 function toFixed(value: number, digits = 2): string {
   if (!Number.isFinite(value)) {
@@ -64,6 +74,144 @@ function toFixed(value: number, digits = 2): string {
 }
 
 let selectedFile: File | null = null
+let hasOutput = false
+let savedOutput: SavedOutput | null = null
+
+function sourceNameFromFile(file: File | null): string {
+  return file?.name.replace(/\.[^/.]+$/, '') ?? 'image'
+}
+
+async function exportSavedOutputToBlob(output: SavedOutput): Promise<Blob> {
+  const { device, texture, sampler, width, height } = output
+
+  const exportTexture = device.createTexture({
+    label: 'export texture rgba8',
+    format: 'rgba8unorm',
+    size: [width, height],
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+  })
+
+  const bindGroupLayout = device.createBindGroupLayout({
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'unfilterable-float' },
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.FRAGMENT,
+        sampler: { type: 'non-filtering' },
+      },
+    ],
+  })
+  const pipelineLayout = device.createPipelineLayout({
+    bindGroupLayouts: [bindGroupLayout],
+  })
+  const pipeline = device.createRenderPipeline({
+    label: 'export texture pipeline',
+    layout: pipelineLayout,
+    vertex: {
+      module: device.createShaderModule({
+        label: 'export vertex shader',
+        code: presentVertexShader,
+      }),
+      entryPoint: 'v',
+    },
+    fragment: {
+      module: device.createShaderModule({
+        label: 'export fragment shader',
+        code: presentFragmentShader,
+      }),
+      entryPoint: 'f',
+      targets: [{ format: 'rgba8unorm' }],
+    },
+  })
+  const bindGroup = device.createBindGroup({
+    label: 'export bind group',
+    layout: bindGroupLayout,
+    entries: [
+      { binding: 0, resource: texture.createView() },
+      { binding: 1, resource: sampler },
+    ],
+  })
+
+  const bytesPerPixel = 4
+  const unpaddedBytesPerRow = width * bytesPerPixel
+  const paddedBytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256
+  const readbackSize = paddedBytesPerRow * height
+
+  const readbackBuffer = device.createBuffer({
+    label: 'export readback buffer',
+    size: readbackSize,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  })
+
+  const encoder = device.createCommandEncoder({ label: 'export encoder' })
+
+  const pass = encoder.beginRenderPass({
+    colorAttachments: [
+      {
+        view: exportTexture.createView(),
+        loadOp: 'clear',
+        storeOp: 'store',
+      },
+    ],
+  })
+  pass.setPipeline(pipeline)
+  pass.setBindGroup(0, bindGroup)
+  pass.draw(3)
+  pass.end()
+
+  encoder.copyTextureToBuffer(
+    { texture: exportTexture },
+    {
+      buffer: readbackBuffer,
+      bytesPerRow: paddedBytesPerRow,
+      rowsPerImage: height,
+    },
+    { width, height, depthOrArrayLayers: 1 },
+  )
+
+  device.queue.submit([encoder.finish()])
+  await device.queue.onSubmittedWorkDone()
+
+  await readbackBuffer.mapAsync(GPUMapMode.READ)
+  const mapped = new Uint8Array(readbackBuffer.getMappedRange())
+  const packed = new Uint8ClampedArray(unpaddedBytesPerRow * height)
+
+  for (let y = 0; y < height; y += 1) {
+    const srcOffset = y * paddedBytesPerRow
+    const dstOffset = y * unpaddedBytesPerRow
+    packed.set(
+      mapped.subarray(srcOffset, srcOffset + unpaddedBytesPerRow),
+      dstOffset,
+    )
+  }
+
+  readbackBuffer.unmap()
+  readbackBuffer.destroy()
+  exportTexture.destroy()
+
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new Error('Failed to create export canvas context')
+  }
+  const imageData = new ImageData(packed, width, height)
+  context.putImageData(imageData, 0, 0)
+
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/png')
+  })
+  if (!blob) {
+    throw new Error('Failed to encode PNG')
+  }
+
+  return blob
+}
 
 on('inputImg', 'change', (event) => {
   const target = event.target
@@ -74,12 +222,18 @@ on('inputImg', 'change', (event) => {
   const file = target.files?.[0] ?? null
   if (!file) {
     selectedFile = null
+    hasOutput = false
+    savedOutput = null
+    saveBtn.disabled = true
     original.removeAttribute('src')
     qualityMeta.textContent = 'No run yet.'
     return
   }
 
   selectedFile = file
+  hasOutput = false
+  savedOutput = null
+  saveBtn.disabled = true
   const reader = new FileReader()
 
   reader.onload = (loadEvent) => {
@@ -94,6 +248,32 @@ on('inputImg', 'change', (event) => {
   reader.readAsDataURL(file)
 })
 
+on('saveBtn', 'click', async () => {
+  const canvas = getElementById<HTMLCanvasElement>('canvas')
+  if (!hasOutput || !savedOutput || canvas.width === 0 || canvas.height === 0) {
+    qualityMeta.textContent = 'Run Process before saving output.'
+    return
+  }
+  qualityMeta.textContent = 'Saving PNG...'
+
+  try {
+    const blob = await exportSavedOutputToBlob(savedOutput)
+    const fileName = `${savedOutput.sourceName}-upscaled-${savedOutput.width}x${savedOutput.height}.png`
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = fileName
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+    URL.revokeObjectURL(url)
+    qualityMeta.textContent = `Saved ${fileName}`
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    qualityMeta.textContent = `Save failed: ${message}`
+  }
+})
+
 on('processBtn', 'click', async () => {
   if (!selectedFile) {
     console.error('Pick an image first.')
@@ -101,6 +281,9 @@ on('processBtn', 'click', async () => {
   }
 
   qualityMeta.textContent = 'Running pipeline...'
+  hasOutput = false
+  savedOutput = null
+  saveBtn.disabled = true
 
   if (!('gpu' in navigator)) {
     console.error('WebGPU not supported in this browser.')
@@ -270,6 +453,16 @@ on('processBtn', 'click', async () => {
   device.queue.submit([encoder.finish()])
   await device.queue.onSubmittedWorkDone()
   const runtimeMs = performance.now() - pipelineStart
+  hasOutput = true
+  savedOutput = {
+    device,
+    texture: finalStage.outputTexture,
+    sampler: frameSampler,
+    width: canvas.width,
+    height: canvas.height,
+    sourceName: sourceNameFromFile(selectedFile),
+  }
+  saveBtn.disabled = false
   qualityMeta.textContent =
     `Upscale complete: ${bitmap.width}x${bitmap.height} -> ` +
     `${canvas.width}x${canvas.height} in ${toFixed(runtimeMs, 1)} ms.`
