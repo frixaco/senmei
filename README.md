@@ -12,6 +12,15 @@ A no-slop, hardware-accelerated MKV player with real-time WebGPU Anime4K upscali
   - [ ] Anime4K_AutoDownscalePre_x4.glsl
   - [ ] Anime4K_Upscale_CNN_x2_M.glsl
 - [ ] handle !WHEN checks
+- [ ] Full parity checklist vs Anime4K GLSL `Ctrl+1 (HQ)`:
+  - [ ] derive `OUTPUT` from real render target size (canvas/backbuffer), not fixed `input * 2`
+  - [ ] rebuild/rebind pipeline stages when `OUTPUT` changes (resize/fullscreen/DPR change)
+  - [ ] keep exact stage order: `Clamp -> Restore_VL -> Upscale_x2_VL -> AutoDownscalePre_x2 -> AutoDownscalePre_x4 -> Upscale_x2_M`
+  - [ ] enforce stage dimensions from GLSL directives:
+    - [ ] `AutoDownscalePre_x2`: `WIDTH OUTPUT.w`, `HEIGHT OUTPUT.h`
+    - [ ] `AutoDownscalePre_x4`: `WIDTH OUTPUT.w / 2`, `HEIGHT OUTPUT.h / 2`
+  - [ ] evaluate each pass `!WHEN` using GLSL context semantics (`MAIN`, `NATIVE`, `OUTPUT`) at runtime
+  - [ ] parity test matrix against mpv pass activation: `1x`, `1.5x`, `2x`, `3x`, `4x`
 
 **Core Pipeline (Native Browser APIs)**
 

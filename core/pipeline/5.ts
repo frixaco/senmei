@@ -32,8 +32,8 @@ export function setupStage5(
 
   const outputTexture = createTexture(
     device,
-    Math.max(1, Math.floor(inputTexture.width / 2)),
-    Math.max(1, Math.floor(inputTexture.height / 2)),
+    Math.max(1, Math.floor(whenReference.output.w / 2)),
+    Math.max(1, Math.floor(whenReference.output.h / 2)),
     'stage5 Anime4K_AutoDownscalePre_x4 output',
     workingFormat,
   )

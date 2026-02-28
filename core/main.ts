@@ -256,9 +256,11 @@ async function createUpscaleRuntime(file: File): Promise<UpscaleRuntime> {
     addressModeV: 'clamp-to-edge',
   })
 
+  const targetOutputWidth = inputWidth * 2
+  const targetOutputHeight = inputHeight * 2
   const whenReference = {
     native: { w: inputWidth, h: inputHeight },
-    output: { w: inputWidth * 2, h: inputHeight * 2 },
+    output: { w: targetOutputWidth, h: targetOutputHeight },
   }
 
   const stage1 = setupStage1(device, inputTexture, frameSampler)
