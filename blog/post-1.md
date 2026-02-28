@@ -23,3 +23,7 @@ Once 3 simple shaders were done porting, I started focusing on preparing multi-s
 After a bit experimenting, I decided on the general structure for the whole multi-stage pipeline and told AI to fully implement it up for me.
 In terms of code ownership, I'd say it's 50/50 (I own half, AI owns the half) - I have the general idea/understanding of how the whole multi-stage multi-pass rendering pipeline currently works, obviously.
 I realized WebGPU/WGSL/shader stuff is not as easily learnable as many other stuff, lots of obscure API, low amount of examples. Given that I was not just porting GLSL shader but GLSL shaders integrated with mpv player, I decided to not spend too much time on this (not worth it for my goals) and use AI but with strict control over its output (strict review focused on GLSL+mpv setup parity).
+
+Two other low-priority things I let AI write:
+- Benchmark button - run the whole pipeline against an image multiple times, calculate time it takes and report
+- Save output PNG button - the pipeline currently output 4k in 8bit quality, the button will save it in 16bits instead for max output quality
