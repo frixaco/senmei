@@ -5,14 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Shader Playground</title>
     <style>
-      #original,
-      #canvas {
-      }
     </style>
   </head>
 
   <body>
     <div style="display: flex; gap: 4px; flex-direction: column">
+      <input type="url" id="videoUrl" value="https://rqbit.anitrack.frixaco.com/torrents/0/stream/0/[SubsPlease]%20Fate%20Strange%20Fake%20-%2008%20(1080p)%20[1E8A7377].mkv" />
+      <button>Play</button>
+      <pre></pre>
+    </div>
+
+    <div style="display: flex; gap: 4px; flex-direction: column">
+
       <input type="file" id="inputImg" accept="image/*" />
 
       <button id="processBtn">Process</button>
