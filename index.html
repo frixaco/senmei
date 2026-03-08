@@ -5,44 +5,427 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Shader Playground</title>
     <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f5f7;
+        --panel: #ffffff;
+        --panel-border: #d8dde3;
+        --text: #111827;
+        --muted: #5f6b7a;
+        --accent: #0f766e;
+        --accent-soft: rgba(15, 118, 110, 0.08);
+        --compare-split: 50%;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Outfit, "Avenir Next", "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: 100%;
+        padding: 24px;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+        gap: 20px;
+        align-items: start;
+      }
+
+      .sidebar {
+        display: grid;
+        gap: 1px;
+        background: var(--panel-border);
+        border: 1px solid var(--panel-border);
+      }
+
+      .sidebar > section {
+        background: var(--panel);
+        padding: 16px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 10px;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .field span,
+      .panel-label {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      input,
+      button {
+        font: inherit;
+      }
+
+      input[type="url"],
+      input[type="file"] {
+        width: 100%;
+        min-width: 0;
+        padding: 10px 12px;
+        border: 1px solid var(--panel-border);
+        border-radius: 0;
+        background: #fbfcfd;
+        color: var(--text);
+        transition:
+          border-color 120ms ease,
+          background-color 120ms ease;
+      }
+
+      input[type="url"]:focus,
+      input[type="file"]:focus {
+        outline: none;
+        border-color: var(--accent);
+        background: #ffffff;
+      }
+
+      .button-stack {
+        display: grid;
+        gap: 6px;
+      }
+
+      button {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--panel-border);
+        border-radius: 0;
+        background: #f8fafb;
+        color: var(--text);
+        cursor: pointer;
+        transition:
+          opacity 120ms ease,
+          background-color 120ms ease,
+          border-color 120ms ease;
+      }
+
+      #processBtn {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #f3fffd;
+      }
+
+      #processBtn:hover:not(:disabled) {
+        background: #0b665f;
+      }
+
+      button:hover:not(:disabled) {
+        border-color: #b8c0ca;
+        background: #ffffff;
+      }
+
+      button:active:not(:disabled) {
+        opacity: 0.8;
+      }
+
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      pre {
+        margin: 0;
+        padding: 10px 12px;
+        border: 1px solid var(--panel-border);
+        border-radius: 0;
+        background: #f8fafc;
+        overflow: auto;
+      }
+
+      .compare-panel {
+        display: grid;
+        gap: 16px;
+        min-width: 0;
+        border: 1px solid var(--panel-border);
+        background: var(--panel);
+        padding: 16px;
+      }
+
+      .compare-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+      }
+
+      .compare-title {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+
+      .compare-frame {
+        display: grid;
+        width: 100%;
+      }
+
+      .comparison {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        overflow: hidden;
+        border: 1px solid var(--panel-border);
+        background: #dfe5eb;
+        cursor: ew-resize;
+        user-select: none;
+        touch-action: none;
+        isolation: isolate;
+      }
+
+      .comparison-layer {
+        position: absolute;
+        inset: 0;
+      }
+
+      .comparison-overlay {
+        clip-path: inset(0 0 0 var(--compare-split));
+      }
+
+      .comparison img,
+      .comparison canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: fill;
+        pointer-events: none;
+        background: #d8dee5;
+      }
+
+      .comparison-divider {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: var(--compare-split);
+        width: 0;
+        transform: translateX(-50%);
+        pointer-events: none;
+      }
+
+      .comparison-divider::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        width: 2px;
+        margin-left: -1px;
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.12);
+      }
+
+      .comparison-handle {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        background: rgba(255, 255, 255, 0.94);
+        border: 1px solid rgba(15, 23, 42, 0.1);
+        transform: translate(-50%, -50%);
+      }
+
+      .comparison-handle::before,
+      .comparison-handle::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        width: 8px;
+        height: 8px;
+        border-top: 2px solid var(--accent);
+        border-right: 2px solid var(--accent);
+      }
+
+      .comparison-handle::before {
+        left: 10px;
+        transform: translateY(-50%) rotate(225deg);
+      }
+
+      .comparison-handle::after {
+        right: 10px;
+        transform: translateY(-50%) rotate(45deg);
+      }
+
+      .comparison-badge {
+        position: absolute;
+        top: 10px;
+        z-index: 1;
+        padding: 5px 8px;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        background: rgba(255, 255, 255, 0.82);
+        color: var(--text);
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        backdrop-filter: blur(8px);
+        pointer-events: none;
+      }
+
+      .comparison-badge-before {
+        left: 10px;
+      }
+
+      .comparison-badge-after {
+        right: 10px;
+      }
+
+      .comparison-empty {
+        position: absolute;
+        left: 16px;
+        bottom: 16px;
+        z-index: 1;
+        max-width: 240px;
+        padding: 12px 14px;
+        border: 1px solid var(--panel-border);
+        background: rgba(255, 255, 255, 0.88);
+        backdrop-filter: blur(8px);
+        transition: opacity 160ms ease;
+      }
+
+      .comparison-empty strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 0.88rem;
+      }
+
+      .comparison-empty p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.84rem;
+        line-height: 1.4;
+      }
+
+      .comparison:has(#original[src]) .comparison-empty {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      #qualityMeta {
+        font-family: "JetBrains Mono", "SFMono-Regular", monospace;
+        white-space: pre-wrap;
+        font-size: 0.82rem;
+        line-height: 1.5;
+      }
+
+      @media (min-width: 961px) {
+        .sidebar {
+          position: sticky;
+          top: 24px;
+        }
+      }
+
+      @media (max-width: 960px) {
+        .workspace {
+          grid-template-columns: 1fr;
+          gap: 16px;
+        }
+
+        .sidebar {
+          position: static;
+        }
+      }
+
+      @media (max-width: 720px) {
+        main {
+          padding: 12px;
+        }
+
+        .comparison-empty {
+          left: 12px;
+          right: 12px;
+          bottom: 12px;
+          max-width: none;
+        }
+      }
     </style>
   </head>
 
   <body>
-    <div style="display: flex; gap: 4px; flex-direction: column">
-      <input type="url" id="videoUrl" value="https://rqbit.anitrack.frixaco.com/torrents/0/stream/0/[SubsPlease]%20Fate%20Strange%20Fake%20-%2008%20(1080p)%20[1E8A7377].mkv" />
-      <button>Play</button>
-      <pre></pre>
-    </div>
+    <main>
+      <div class="workspace">
+        <aside class="sidebar">
+          <section class="stack video-panel">
+            <label class="field">
+              <span>Video URL</span>
+              <input
+                type="url"
+                id="videoUrl"
+                value="https://rqbit.anitrack.frixaco.com/torrents/0/stream/0/[SubsPlease]%20Fate%20Strange%20Fake%20-%2008%20(1080p)%20[1E8A7377].mkv"
+              />
+            </label>
+            <div class="button-stack">
+              <button>Play</button>
+            </div>
+          </section>
 
-    <div style="display: flex; gap: 4px; flex-direction: column">
+          <section class="stack">
+            <label class="field">
+              <span>Source Image</span>
+              <input type="file" id="inputImg" accept="image/*" />
+            </label>
+            <div class="button-stack">
+              <button id="processBtn">Process</button>
+              <button id="benchmarkBtn" disabled>Benchmark</button>
+              <button id="saveBtn" disabled>Save output PNG</button>
+            </div>
+          </section>
 
-      <input type="file" id="inputImg" accept="image/*" />
+          <section class="stack">
+            <div class="panel-label">Quality Report</div>
+            <pre id="qualityMeta">No run yet.</pre>
+          </section>
+        </aside>
 
-      <button id="processBtn">Process</button>
-      <button id="benchmarkBtn" disabled>Benchmark</button>
-      <button id="saveBtn" disabled>Save output PNG</button>
-    </div>
+        <section class="compare-panel">
+          <div class="compare-head">
+            <h1 class="compare-title">Before / After</h1>
+          </div>
 
-    <div style="display: flex; flex-direction: column; gap: 4px">
-      <label>
-        After
-        <canvas id="canvas"></canvas>
-      </label>
-      <label>
-        Before
-        <img id="original" alt="original" />
-      </label>
-    </div>
-    <div>
-      <h3>Quality Report</h3>
-      <pre
-        id="qualityMeta"
-        style="font-family: monospace; white-space: pre-wrap; margin: 0"
-      >
-No run yet.</pre
-      >
-    </div>
+          <div class="compare-frame">
+            <div id="comparison" class="comparison">
+              <div class="comparison-layer">
+                <img id="original" alt="Original source preview" />
+              </div>
+              <div class="comparison-layer comparison-overlay">
+                <canvas id="canvas"></canvas>
+              </div>
+              <div class="comparison-empty">
+                <strong>No image loaded</strong>
+                <p>Choose a source image, then run Process to compare.</p>
+              </div>
+              <div class="comparison-divider" aria-hidden="true">
+                <div class="comparison-handle"></div>
+              </div>
+              <div class="comparison-badge comparison-badge-before">Before</div>
+              <div class="comparison-badge comparison-badge-after">After</div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
 
     <script type="module" src="./main.ts"></script>
   </body>

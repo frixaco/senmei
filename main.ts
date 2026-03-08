@@ -56,6 +56,7 @@ function on(
 }
 
 const original = getElementById<HTMLImageElement>('original')
+const comparison = getElementById<HTMLElement>('comparison')
 const qualityMeta = getElementById<HTMLElement>('qualityMeta')
 const processBtn = getElementById<HTMLButtonElement>('processBtn')
 const benchmarkBtn = getElementById<HTMLButtonElement>('benchmarkBtn')
@@ -65,6 +66,7 @@ const BENCHMARK_WARMUP_FRAMES = 40
 const BENCHMARK_SAMPLE_FRAMES = 180
 const FPS_24_FRAME_BUDGET_MS = 1000 / 24
 const FPS_60_FRAME_BUDGET_MS = 1000 / 60
+const DEFAULT_COMPARE_SPLIT = 0.5
 
 interface SavedOutput {
   device: GPUDevice
@@ -108,6 +110,10 @@ function toFixed(value: number, digits = 2): string {
   return value.toFixed(digits)
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
 let selectedFile: File | null = null
 let hasOutput = false
 let savedOutput: SavedOutput | null = null
@@ -120,6 +126,65 @@ function setButtonsIdleState(): void {
   processBtn.disabled = false
   benchmarkBtn.disabled = selectedFile === null
   saveBtn.disabled = !hasOutput
+}
+
+function setComparisonSplit(split: number): void {
+  comparison.style.setProperty(
+    '--compare-split',
+    `${clamp(split, 0, 1) * 100}%`,
+  )
+}
+
+function syncComparisonViewport(width: number, height: number): void {
+  if (width <= 0 || height <= 0) {
+    return
+  }
+
+  comparison.style.aspectRatio = `${width} / ${height}`
+}
+
+function resetComparisonViewport(): void {
+  comparison.style.removeProperty('aspect-ratio')
+  setComparisonSplit(DEFAULT_COMPARE_SPLIT)
+}
+
+function clearOutputPreview(): void {
+  const canvas = getElementById<HTMLCanvasElement>('canvas')
+  canvas.width = 0
+  canvas.height = 0
+}
+
+function updateComparisonSplitFromPointer(clientX: number): void {
+  const rect = comparison.getBoundingClientRect()
+  if (rect.width === 0) {
+    return
+  }
+
+  setComparisonSplit((clientX - rect.left) / rect.width)
+}
+
+function beginComparisonDrag(event: PointerEvent): void {
+  if (event.button !== 0 && event.pointerType === 'mouse') {
+    return
+  }
+
+  event.preventDefault()
+  updateComparisonSplitFromPointer(event.clientX)
+  comparison.setPointerCapture(event.pointerId)
+}
+
+function moveComparisonDrag(event: PointerEvent): void {
+  if (!comparison.hasPointerCapture(event.pointerId)) {
+    return
+  }
+
+  updateComparisonSplitFromPointer(event.clientX)
+}
+
+function endComparisonDrag(event: PointerEvent): void {
+  if (comparison.hasPointerCapture(event.pointerId)) {
+    comparison.releasePointerCapture(event.pointerId)
+  }
 }
 
 function ensureWebGpuAvailable(): void {
@@ -187,8 +252,12 @@ function summarizeBenchmarkSamples(samples: number[]): BenchmarkSummary {
   }
 }
 
-function formatBenchmarkSummary(label: string, summary: BenchmarkSummary): string {
-  const avgFps = summary.avgMs > 0 ? 1000 / summary.avgMs : Number.POSITIVE_INFINITY
+function formatBenchmarkSummary(
+  label: string,
+  summary: BenchmarkSummary,
+): string {
+  const avgFps =
+    summary.avgMs > 0 ? 1000 / summary.avgMs : Number.POSITIVE_INFINITY
   return (
     `${label}: avg ${toFixed(summary.avgMs, 2)} ms (${toFixed(avgFps, 1)} fps), ` +
     `p50 ${toFixed(summary.p50Ms, 2)} ms, ` +
@@ -197,7 +266,10 @@ function formatBenchmarkSummary(label: string, summary: BenchmarkSummary): strin
   )
 }
 
-function formatThroughputSummary(label: string, summary: ThroughputSummary): string {
+function formatThroughputSummary(
+  label: string,
+  summary: ThroughputSummary,
+): string {
   return (
     `${label}: avg ${toFixed(summary.avgMs, 2)} ms ` +
     `(${toFixed(summary.fps, 1)} fps sustained)`
@@ -295,8 +367,7 @@ async function createUpscaleRuntime(file: File): Promise<UpscaleRuntime> {
   const canvas = getElementById<HTMLCanvasElement>('canvas')
   canvas.width = finalTexture.width
   canvas.height = finalTexture.height
-  canvas.style.width = `${inputWidth}px`
-  canvas.style.height = `${inputHeight}px`
+  syncComparisonViewport(inputWidth, inputHeight)
 
   const context = canvas.getContext('webgpu')
   if (!context) {
@@ -386,7 +457,9 @@ async function benchmarkRuntime(
       uploadRuntimeInputFrame(runtime)
     }
     const encoder = runtime.device.createCommandEncoder({
-      label: includePresentPass ? 'benchmark end-to-end frame' : 'benchmark core frame',
+      label: includePresentPass
+        ? 'benchmark end-to-end frame'
+        : 'benchmark core frame',
     })
     encodeUpscalePasses(encoder, runtime.stageChain)
     if (includePresentPass) {
@@ -582,7 +655,9 @@ on('inputImg', 'change', (event) => {
     selectedFile = null
     hasOutput = false
     savedOutput = null
+    clearOutputPreview()
     original.removeAttribute('src')
+    resetComparisonViewport()
     qualityMeta.textContent = 'No run yet.'
     setButtonsIdleState()
     return
@@ -591,6 +666,9 @@ on('inputImg', 'change', (event) => {
   selectedFile = file
   hasOutput = false
   savedOutput = null
+  original.removeAttribute('src')
+  clearOutputPreview()
+  resetComparisonViewport()
   setButtonsIdleState()
   const reader = new FileReader()
 
@@ -605,6 +683,17 @@ on('inputImg', 'change', (event) => {
 
   reader.readAsDataURL(file)
 })
+
+original.addEventListener('load', () => {
+  syncComparisonViewport(original.naturalWidth, original.naturalHeight)
+})
+
+comparison.addEventListener('pointerdown', beginComparisonDrag)
+comparison.addEventListener('pointermove', moveComparisonDrag)
+comparison.addEventListener('pointerup', endComparisonDrag)
+comparison.addEventListener('pointercancel', endComparisonDrag)
+
+resetComparisonViewport()
 
 on('saveBtn', 'click', async () => {
   const canvas = getElementById<HTMLCanvasElement>('canvas')
@@ -671,7 +760,8 @@ on('benchmarkBtn', 'click', async () => {
       BENCHMARK_SAMPLE_FRAMES,
     )
 
-    qualityMeta.textContent = 'Benchmarking video throughput (upload + pipeline)...'
+    qualityMeta.textContent =
+      'Benchmarking video throughput (upload + pipeline)...'
     const throughputSummary = await benchmarkRuntimeThroughput(
       runtime,
       false,
@@ -687,10 +777,19 @@ on('benchmarkBtn', 'click', async () => {
         `${runtime.finalTexture.width}x${runtime.finalTexture.height}`,
       `Warmup: ${BENCHMARK_WARMUP_FRAMES} frames, sample: ${BENCHMARK_SAMPLE_FRAMES} frames`,
       formatBenchmarkSummary('Core', coreSummary),
-      formatBenchmarkSummary('Video latency (upload + present)', endToEndSummary),
-      formatThroughputSummary('Video throughput (upload + pipeline)', throughputSummary),
+      formatBenchmarkSummary(
+        'Video latency (upload + present)',
+        endToEndSummary,
+      ),
+      formatThroughputSummary(
+        'Video throughput (upload + pipeline)',
+        throughputSummary,
+      ),
       benchmarkBudgetVerdict('Video latency p95 budget', endToEndSummary.p95Ms),
-      benchmarkBudgetVerdict('Video throughput avg budget', throughputSummary.avgMs),
+      benchmarkBudgetVerdict(
+        'Video throughput avg budget',
+        throughputSummary.avgMs,
+      ),
     ].join('\n')
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
