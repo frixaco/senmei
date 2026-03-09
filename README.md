@@ -33,6 +33,11 @@
     - [ ] `AutoDownscalePre_x4`: `WIDTH OUTPUT.w / 2`, `HEIGHT OUTPUT.h / 2`
   - [ ] evaluate each pass `!WHEN` using GLSL context semantics (`MAIN`, `NATIVE`, `OUTPUT`) at runtime
   - [ ] parity test matrix against mpv pass activation: `1x`, `1.5x`, `2x`, `3x`, `4x`
+- [ ] MKV parser: use SeekHead for direct metadata lookup instead of scanning entire file
+  - [ ] add `readUint`/`readBytes` helpers to read element data values
+  - [ ] parse SeekHead (first Segment child) to get byte offsets of Info, Tracks, Tags, etc.
+  - [ ] jump directly to each metadata element via `segmentDataStart + seekPosition`
+  - [ ] remove full-Segment scan and Cluster-skip logic
 
 ## Side Quests
 
