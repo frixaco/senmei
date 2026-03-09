@@ -73,14 +73,59 @@ type Element = {
 async function openMatroska(reader: Reader) {
   // TODO: create a map of all IDs, offets, core information, track info (name, length)
   let cursor = 0;
+  let id;
+  let size;
 
-  // first byte to binary
-  const firstByte = await reader.read(cursor, 1);
-  
+  let nextPart: "id" | "size" | "data" = "id";
+  if (nextPart === "id") {
+    let firstByte = (await reader.read(cursor, 1))[0]!;
 
-  // count till first 1
-  // determine how many bytes to read
-  // read that many bytes keeping first byte
+    let width = 1;
+    let mask = 0x80; // 1000 0000
+
+    while ((firstByte & mask) === 0) {
+      width++;
+      mask >>= 1;
+    }
+
+    let bytes = await reader.read(cursor, width);
+
+    let value = firstByte;
+    for (let i = 1; i < width; i++) {
+      value = value * 256 + bytes[i]!;
+    }
+
+    id = value;
+    nextPart = "size";
+    cursor += width;
+  }
+
+  if (nextPart === "size") {
+    let firstByte = (await reader.read(cursor, 1))[0]!;
+
+    let width = 1;
+    let mask = 0x80; // 1000 0000
+
+    while ((firstByte & mask) === 0) {
+      width++;
+      mask >>= 1;
+    }
+    let bytes = await reader.read(cursor, width);
+
+    let value = firstByte & (mask - 1);
+    for (let i = 1; i < width; i++) {
+      value = value * 256 + bytes[i]!;
+    }
+
+    size = value;
+    nextPart = "size";
+    cursor += width;
+  }
+
+  console.log("First element:", {
+    id: id?.toString(16),
+    size,
+  });
 
   return {
     tracks: {
