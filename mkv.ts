@@ -8,7 +8,16 @@ async function main() {
   const backend = await createBackend(filePath, "local");
   const reader = await createBufferedReader(backend);
   const mkv = await openMatroska(reader);
-  console.log(JSON.stringify(mkv, null, 2));
+  console.log(mkv);
+
+  const tree = await mkv.tree();
+  // const trackTree = tree.segment.branches?.find((v) => v.name === "TRACKS");
+  // const tracks = trackTree?.branches?.map((b) => {
+  //   const element = b.branches?.find((c) => c.name === "TRACK_UID");
+  //   return element;
+  // });
+  //
+  console.log(JSON.stringify(tree, null, 2));
 }
 
 type Backend = {
@@ -151,42 +160,64 @@ type Element = {
   isMaster: boolean;
   size: number;
   dataStart: number;
+  // end: number;
   branches?: Element[];
 };
 
 async function openMatroska(reader: BufferedReader) {
   async function parseElement(cursor: number): Promise<Element> {
-    let result = reader.read(cursor, 1);
-    let firstByte = (result instanceof Uint8Array ? result : await result)[0]!;
-    let width = 1;
-    let mask = 0x80;
-    while ((firstByte & mask) === 0) {
-      width++;
-      mask >>= 1;
-    }
-    result = reader.read(cursor, width);
-    let bytes = result instanceof Uint8Array ? result : await result;
-    let id = firstByte;
-    for (let i = 1; i < width; i++) {
-      id = id * 256 + bytes[i]!;
-    }
-    cursor += width;
+    async function parseId() {
+      let result = reader.read(cursor, 1);
+      let firstByte = (
+        result instanceof Uint8Array ? result : await result
+      )[0]!;
+      let width = 1;
+      let mask = 0x80;
+      while ((firstByte & mask) === 0) {
+        width++;
+        mask >>= 1;
+      }
+      result = reader.read(cursor, width);
+      let bytes = result instanceof Uint8Array ? result : await result;
+      let id = firstByte;
+      for (let i = 1; i < width; i++) {
+        id = id * 256 + bytes[i]!;
+      }
+      cursor += width;
 
-    result = reader.read(cursor, 1);
-    firstByte = (result instanceof Uint8Array ? result : await result)[0]!;
-    width = 1;
-    mask = 0x80;
-    while ((firstByte & mask) === 0) {
-      width++;
-      mask >>= 1;
+      return id;
     }
-    result = reader.read(cursor, width);
-    bytes = result instanceof Uint8Array ? result : await result;
-    let size = firstByte & (mask - 1);
-    for (let i = 1; i < width; i++) {
-      size = size * 256 + bytes[i]!;
+
+    async function parseSize() {
+      let result = reader.read(cursor, 1);
+      let firstByte = (
+        result instanceof Uint8Array ? result : await result
+      )[0]!;
+      let width = 1;
+      let mask = 0x80;
+      while ((firstByte & mask) === 0) {
+        width++;
+        mask >>= 1;
+      }
+      result = reader.read(cursor, width);
+      let bytes = result instanceof Uint8Array ? result : await result;
+      let size = firstByte & (mask - 1);
+      for (let i = 1; i < width; i++) {
+        size = size * 256 + bytes[i]!;
+      }
+      cursor += width;
+
+      result = reader.read(cursor, width);
+      bytes = result instanceof Uint8Array ? result : await result;
+      if (bytes.toHex() === "ff") {
+        return -1;
+      }
+
+      return size;
     }
-    cursor += width;
+
+    const id = await parseId();
+    const size = await parseSize();
 
     const elementInfo = ELEMENT_INFO[id];
     const name = elementInfo?.name ?? `UNKNOWN(0x${id.toString(16)})`;
@@ -194,7 +225,28 @@ async function openMatroska(reader: BufferedReader) {
     let branches: Element[] = [];
 
     if (isMaster) {
-    // if (isMaster && name !== "CLUSTER") {
+      // Read element header.
+      //
+      // If size is known:
+      //   for a master element, parse children until cursor reaches
+      // dataStart + size.
+      //
+      // If size is unknown:
+      //   reject unless schema says this element allows unknown
+      // size.
+      //
+      // If unknown-size element is Segment:
+      //   keep reading Segment children until EOF / stream end.
+      //
+      // If unknown-size element is Cluster:
+      //   keep reading Cluster children until the next element
+      // begins whose ID is in LEVEL_0_AND_1_ELEMENT_IDS.
+      //   Stop before consuming that next element.
+      //   That next element belongs after the current Cluster.
+      //
+      // Do not stop when a nested child begins.
+      // A nested child is part of the current element.
+
       let offset = cursor;
       while (offset < cursor + size) {
         const child = await parseElement(offset);
@@ -213,11 +265,20 @@ async function openMatroska(reader: BufferedReader) {
     };
   }
 
-  const header = await parseElement(0);
-  const segment = await parseElement(header.dataStart + header.size);
+  async function getTree() {
+    const header = await parseElement(0);
+    const segment = await parseElement(header.dataStart + header.size);
+    return {
+      header,
+      segment,
+    };
+  }
 
   return {
-    tree: [header, segment],
+    tree: getTree,
+    audio: [],
+    video: [],
+    subtitles: [],
   };
 }
 

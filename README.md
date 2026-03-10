@@ -38,6 +38,7 @@
   - [ ] parse SeekHead (first Segment child) to get byte offsets of Info, Tracks, Tags, etc.
   - [ ] jump directly to each metadata element via `segmentDataStart + seekPosition`
   - [ ] remove full-Segment scan and Cluster-skip logic
+- [ ] Noticed when comparing GLSL version to WGSL, GLSL has slightly darker colors than WGSL
 
 ## Side Quests
 

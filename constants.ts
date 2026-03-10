@@ -1,4 +1,9 @@
-type ElementDefinition = readonly [name: string, id: number, isMaster?: true];
+type ElementDefinition = readonly [
+  name: string,
+  id: number,
+  isMaster?: true,
+  unknownSizeAllowed?: true,
+];
 
 const ELEMENT_DEFINITIONS = [
   // EBML header / globals
@@ -14,13 +19,14 @@ const ELEMENT_DEFINITIONS = [
   ["VOID", 0xec],
 
   // Top-level Matroska elements
-  ["SEGMENT", 0x18538067, true],
+  ["SEGMENT", 0x18538067, true, true],
   ["SEEK_HEAD", 0x114d9b74, true],
   ["INFO", 0x1549a966, true],
   ["TRACKS", 0x1654ae6b, true],
-  ["CLUSTER", 0x1f43b675, true],
+  ["CLUSTER", 0x1f43b675, true, true],
   ["CUES", 0x1c53bb6b, true],
   ["ATTACHMENTS", 0x1941a469, true],
+  ["CHAPTERS", 0x1043a770, true],
 
   // Seek head
   ["SEEK", 0x4dbb, true],
@@ -79,6 +85,8 @@ const ELEMENT_DEFINITIONS = [
 
   // Cluster payload
   ["TIMESTAMP", 0xe7],
+  ["SILENT_TRACKS", 0x5854, true],
+  ["SILENT_TRACK_NUMBER", 0x58d7],
   ["POSITION", 0xa7],
   ["PREV_SIZE", 0xab],
   ["SIMPLE_BLOCK", 0xa3],
@@ -87,6 +95,7 @@ const ELEMENT_DEFINITIONS = [
   ["BLOCK_DURATION", 0x9b],
   ["REFERENCE_BLOCK", 0xfb],
   ["CODEC_STATE", 0xa4],
+  ["ENCRYPTED_BLOCK", 0xaf],
 
   // Cues
   ["CUE_POINT", 0xbb, true],
@@ -115,6 +124,7 @@ const ELEMENT_DEFINITIONS = [
 
   // Attachments
   ["ATTACHED_FILE", 0x61a7, true],
+  ["FILE_DESCRIPTION", 0x467e],
   ["FILE_NAME", 0x466e],
   ["FILE_MEDIA_TYPE", 0x4660],
   ["FILE_DATA", 0x465c],
@@ -130,13 +140,18 @@ type ElementIdByName = {
 type ElementInfo = Readonly<{
   name: ElementName;
   isMaster: boolean;
+  unknownSizeAllowed: boolean;
 }>;
 
 export const ELEMENT_INFO: Readonly<Record<number, ElementInfo>> =
   Object.fromEntries(
-    ELEMENT_DEFINITIONS.map(([name, id, isMaster]) => [
+    ELEMENT_DEFINITIONS.map(([name, id, isMaster, unknownSizeAllowed]) => [
       id,
-      { name, isMaster: isMaster === true },
+      {
+        name,
+        isMaster: isMaster === true,
+        unknownSizeAllowed: unknownSizeAllowed === true,
+      },
     ]),
   );
 
@@ -151,6 +166,34 @@ export const ELEMENT_NAME = Object.fromEntries(
 export const MASTER_ELEMENTS: Set<number> = new Set(
   ELEMENT_DEFINITIONS.flatMap(([, id, isMaster]) => (isMaster ? [id] : [])),
 );
+
+const LEVEL_0_ELEMENT_NAMES = ["EBML", "SEGMENT"] as const satisfies ReadonlyArray<
+  ElementName
+>;
+
+const LEVEL_1_ELEMENT_NAMES = [
+  "SEEK_HEAD",
+  "INFO",
+  "CLUSTER",
+  "TRACKS",
+  "CUES",
+  "ATTACHMENTS",
+  "CHAPTERS",
+  "TAGS",
+] as const satisfies ReadonlyArray<ElementName>;
+
+export const LEVEL_0_ELEMENT_IDS = LEVEL_0_ELEMENT_NAMES.map(
+  (name) => ELEMENT_ID[name],
+);
+
+export const LEVEL_1_ELEMENT_IDS = LEVEL_1_ELEMENT_NAMES.map(
+  (name) => ELEMENT_ID[name],
+);
+
+export const LEVEL_0_AND_1_ELEMENT_IDS = [
+  ...LEVEL_0_ELEMENT_IDS,
+  ...LEVEL_1_ELEMENT_IDS,
+];
 
 export const TRACK_TYPE = {
   VIDEO: 1,
