@@ -24,29 +24,11 @@
   - [x] Anime4K_AutoDownscalePre_x2.glsl
   - [x] Anime4K_AutoDownscalePre_x4.glsl
   - [x] Anime4K_Upscale_CNN_x2_M.glsl
-- [ ] Full parity checklist vs Anime4K GLSL `Ctrl+1 (HQ)`:
-  - [ ] derive `OUTPUT` from real render target size (canvas/backbuffer), not fixed `input * 2`
-  - [ ] rebuild/rebind pipeline stages when `OUTPUT` changes (resize/fullscreen/DPR change)
-  - [ ] keep exact stage order: `Clamp -> Restore_VL -> Upscale_x2_VL -> AutoDownscalePre_x2 -> AutoDownscalePre_x4 -> Upscale_x2_M`
-  - [ ] enforce stage dimensions from GLSL directives:
-    - [ ] `AutoDownscalePre_x2`: `WIDTH OUTPUT.w`, `HEIGHT OUTPUT.h`
-    - [ ] `AutoDownscalePre_x4`: `WIDTH OUTPUT.w / 2`, `HEIGHT OUTPUT.h / 2`
-  - [ ] evaluate each pass `!WHEN` using GLSL context semantics (`MAIN`, `NATIVE`, `OUTPUT`) at runtime
-  - [ ] parity test matrix against mpv pass activation: `1x`, `1.5x`, `2x`, `3x`, `4x`
-- [ ] MKV parser: use SeekHead for direct metadata lookup instead of scanning entire file
-  - [ ] add `readUint`/`readBytes` helpers to read element data values
-  - [ ] parse SeekHead (first Segment child) to get byte offsets of Info, Tracks, Tags, etc.
-  - [ ] jump directly to each metadata element via `segmentDataStart + seekPosition`
-  - [ ] remove full-Segment scan and Cluster-skip logic
-- [ ] Noticed when comparing GLSL version to WGSL, GLSL has slightly darker colors than WGSL
+- [x] Set up full shader pipeline to process uploaded images and confirm upscaling works
+- [ ] Write Matroska parser with API tuned for video players
+- [ ] Fix color space conversion: https://x.com/wrennly_dev/status/2039326806260748757
 
 ## Side Quests
-
-### Current project rating: 6/7
-
-You are combining **low-level binary streaming** (Mediabunny), **advanced threading** (Workers + AudioWorklets), **strict memory management** (GC avoidance, backpressure), and **modern GPU graphics programming** (TypeGPU + WGSL Anime4K) into a single, cohesive, dependency-light web app.
-
-It is a perfect showcase of Full-Stack Web Systems engineering.
 
 ### Option 1: Lock-Free SharedArrayBuffer + Atomics Pipeline (Zero GC)
 
