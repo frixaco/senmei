@@ -143,17 +143,16 @@ type ElementInfo = Readonly<{
   unknownSizeAllowed: boolean;
 }>;
 
-export const ELEMENT_INFO: Readonly<Record<number, ElementInfo>> =
-  Object.fromEntries(
-    ELEMENT_DEFINITIONS.map(([name, id, isMaster, unknownSizeAllowed]) => [
-      id,
-      {
-        name,
-        isMaster: isMaster === true,
-        unknownSizeAllowed: unknownSizeAllowed === true,
-      },
-    ]),
-  );
+export const ELEMENT_INFO: Readonly<Record<number, ElementInfo>> = Object.fromEntries(
+  ELEMENT_DEFINITIONS.map(([name, id, isMaster, unknownSizeAllowed]) => [
+    id,
+    {
+      name,
+      isMaster: isMaster === true,
+      unknownSizeAllowed: unknownSizeAllowed === true,
+    },
+  ]),
+);
 
 export const ELEMENT_ID = Object.fromEntries(
   ELEMENT_DEFINITIONS.map(([name, id]) => [name, id]),
@@ -167,9 +166,7 @@ export const MASTER_ELEMENTS: Set<number> = new Set(
   ELEMENT_DEFINITIONS.flatMap(([, id, isMaster]) => (isMaster ? [id] : [])),
 );
 
-const LEVEL_0_ELEMENT_NAMES = ["EBML", "SEGMENT"] as const satisfies ReadonlyArray<
-  ElementName
->;
+const LEVEL_0_ELEMENT_NAMES = ["EBML", "SEGMENT"] as const satisfies ReadonlyArray<ElementName>;
 
 const LEVEL_1_ELEMENT_NAMES = [
   "SEEK_HEAD",
@@ -182,18 +179,11 @@ const LEVEL_1_ELEMENT_NAMES = [
   "TAGS",
 ] as const satisfies ReadonlyArray<ElementName>;
 
-export const LEVEL_0_ELEMENT_IDS = LEVEL_0_ELEMENT_NAMES.map(
-  (name) => ELEMENT_ID[name],
-);
+export const LEVEL_0_ELEMENT_IDS = LEVEL_0_ELEMENT_NAMES.map((name) => ELEMENT_ID[name]);
 
-export const LEVEL_1_ELEMENT_IDS = LEVEL_1_ELEMENT_NAMES.map(
-  (name) => ELEMENT_ID[name],
-);
+export const LEVEL_1_ELEMENT_IDS = LEVEL_1_ELEMENT_NAMES.map((name) => ELEMENT_ID[name]);
 
-export const LEVEL_0_AND_1_ELEMENT_IDS = [
-  ...LEVEL_0_ELEMENT_IDS,
-  ...LEVEL_1_ELEMENT_IDS,
-];
+export const LEVEL_0_AND_1_ELEMENT_IDS = [...LEVEL_0_ELEMENT_IDS, ...LEVEL_1_ELEMENT_IDS];
 
 export const TRACK_TYPE = {
   VIDEO: 1,

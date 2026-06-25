@@ -1,4 +1,4 @@
-const fragShared = /* wgsl */`
+const fragShared = /* wgsl */ `
 @group(0) @binding(0) var frame: texture_2d<f32>;
 @group(0) @binding(1) var frame_sampler: sampler;
 
@@ -19,19 +19,20 @@ fn tex_off(tex: texture_2d<f32>, base_pos: vec4f, x_off: f32, y_off: f32) -> vec
 	let uv = base_pos.xy * pt + vec2f(x_off, y_off) * pt;
 	return textureSampleLevel(tex, frame_sampler, uv, 0.0);
 }
-`
+`;
 
-const upscaleWhen = 'OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *'
-export const whenP1 = upscaleWhen
-export const whenP2 = upscaleWhen
-export const whenP3 = upscaleWhen
-export const whenP4 = upscaleWhen
-export const whenP5 = upscaleWhen
-export const whenP6 = upscaleWhen
-export const whenP7 = upscaleWhen
-export const whenP8 = upscaleWhen
-export const whenF = upscaleWhen
+const upscaleWhen = "OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *";
+export const whenP1 = upscaleWhen;
+export const whenP2 = upscaleWhen;
+export const whenP3 = upscaleWhen;
+export const whenP4 = upscaleWhen;
+export const whenP5 = upscaleWhen;
+export const whenP6 = upscaleWhen;
+export const whenP7 = upscaleWhen;
+export const whenP8 = upscaleWhen;
+export const whenF = upscaleWhen;
 
+//!DESC Anime4K-v3.2-Upscale-CNN-x2-(M)-Conv-4x3x3x3
 //!HOOK MAIN
 //!BIND MAIN
 //!SAVE conv2d_tf
@@ -39,7 +40,7 @@ export const whenF = upscaleWhen
 //!HEIGHT MAIN.h
 //!COMPONENTS 4
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
-export const fragP1 = /* wgsl */`
+export const fragP1 = /* wgsl */ `
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
@@ -59,8 +60,9 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 	result = result + vec4f(0.014463938, -0.0031906287, 0.007015422, -0.003888468);
 	return result;
 }
-`
+`;
 
+//!DESC Anime4K-v3.2-Upscale-CNN-x2-(M)-Conv-4x3x3x8
 //!HOOK MAIN
 //!BIND conv2d_tf
 //!SAVE conv2d_1_tf
@@ -68,7 +70,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!HEIGHT conv2d_tf.h
 //!COMPONENTS 4
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
-export const fragP2 = /* wgsl */`
+export const fragP2 = /* wgsl */ `
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
@@ -97,11 +99,12 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 	result += mat4x4f(-0.11251988, 0.12106985, 0.011923068, 0.3662747, 0.004800994, 0.017972551, 0.004761366, -0.07934206, -0.13755941, -0.022852683, 0.1502225, 0.009758547, -0.16964264, 0.00984782, 0.07855833, 0.035730787) * go_1(pos, 1.0, -1.0);
 	result += mat4x4f(0.01964957, -0.27226487, 0.033933397, -0.117632054, -0.009058229, 0.047830686, -0.01125145, 0.136628, 0.0056388285, 0.3028781, -0.12286517, 0.23498532, -0.009319075, -0.444048, 0.16174883, -0.06367683) * go_1(pos, 1.0, 0.0);
 	result += mat4x4f(0.02343933, -0.010915871, -0.058680378, -0.21886891, -0.010750894, -0.06671997, 0.0602906, -0.07903071, 0.066891186, 0.06650588, 0.14362891, -0.101870626, 0.02264628, -0.06940821, -0.077616625, 0.110911585) * go_1(pos, 1.0, 1.0);
-	result += vec4(0.032014452, -0.020821465, 0.0826416, -0.002838458);
+	result += vec4f(0.032014452, -0.020821465, 0.0826416, -0.002838458);
 	return result;
 }
-`
+`;
 
+//!DESC Anime4K-v3.2-Upscale-CNN-x2-(M)-Conv-4x3x3x8
 //!HOOK MAIN
 //!BIND conv2d_1_tf
 //!SAVE conv2d_2_tf
@@ -109,7 +112,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!HEIGHT conv2d_1_tf.h
 //!COMPONENTS 4
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
-export const fragP3 = /* wgsl */`
+export const fragP3 = /* wgsl */ `
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
@@ -138,11 +141,12 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 	result += mat4x4f(0.026959421, -0.06391859, 0.0034752619, 0.14521928, -0.0010877338, -0.032619733, 0.005375293, -0.018952755, 0.03381545, -0.007652831, 0.034141563, 0.046016496, 0.11219674, 0.030913852, 0.077403754, 0.17192438) * go_1(pos, 1.0, -1.0);
 	result += mat4x4f(0.040326044, 0.17290725, -0.1220239, -0.09594783, -0.025229257, 0.17913155, -0.26623353, -0.033396784, -0.03075146, 0.009143897, -0.0136083895, -0.13886899, 0.075683735, -0.11584183, 0.22182357, 0.19350322) * go_1(pos, 1.0, 0.0);
 	result += mat4x4f(0.15726025, -0.10215694, -0.060057458, 0.26487043, -0.04075552, -0.016496127, 0.0015382086, 0.108562306, 0.026795091, 0.0441233, -0.08754318, -0.0460157, 0.048422016, 0.14107347, 0.07986661, 0.1047697) * go_1(pos, 1.0, 1.0);
-	result += vec4(0.0766796, 0.08115133, -0.05703058, 0.14025708);
+	result += vec4f(0.0766796, 0.08115133, -0.05703058, 0.14025708);
 	return result;
 }
-`
+`;
 
+//!DESC Anime4K-v3.2-Upscale-CNN-x2-(M)-Conv-4x3x3x8
 //!HOOK MAIN
 //!BIND conv2d_2_tf
 //!SAVE conv2d_3_tf
@@ -150,7 +154,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!HEIGHT conv2d_2_tf.h
 //!COMPONENTS 4
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
-export const fragP4 = /* wgsl */`
+export const fragP4 = /* wgsl */ `
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
@@ -179,11 +183,12 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 	result += mat4x4f(0.10873893, 0.003872542, -0.13476561, -0.036068805, -0.054637462, 0.02304618, 0.04707738, -0.2856381, 0.07124422, 0.010866545, 0.20484549, -0.008342406, -0.43660247, -0.041055538, 0.33536008, -0.060022205) * go_1(pos, 1.0, -1.0);
 	result += mat4x4f(0.1966458, 0.0016302796, -0.25712642, -0.09639119, -0.006955351, 0.10882133, 0.1107341, 0.062697805, -0.1074494, 0.17361663, 0.6429869, -0.39846307, -0.26302996, 0.048710946, 0.40387508, 0.4299715) * go_1(pos, 1.0, 0.0);
 	result += mat4x4f(0.18948616, 0.24086732, -0.064474985, -0.11069709, 0.1279659, -0.13438123, -0.028438117, 0.125883, 0.018153818, -0.21942288, 0.020390838, -0.22797634, -0.10821287, -0.17175092, 0.122016855, 0.20699544) * go_1(pos, 1.0, 1.0);
-	result += vec4(-0.05101961, -0.060740646, -0.024465766, 0.058471628);
+	result += vec4f(-0.05101961, -0.060740646, -0.024465766, 0.058471628);
 	return result;
 }
-`
+`;
 
+//!DESC Anime4K-v3.2-Upscale-CNN-x2-(M)-Conv-4x3x3x8
 //!HOOK MAIN
 //!BIND conv2d_3_tf
 //!SAVE conv2d_4_tf
@@ -191,7 +196,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!HEIGHT conv2d_3_tf.h
 //!COMPONENTS 4
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
-export const fragP5 = /* wgsl */`
+export const fragP5 = /* wgsl */ `
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
@@ -220,11 +225,12 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 	result += mat4x4f(0.057019282, -0.112741895, 0.030361209, 0.14567861, 0.056265317, -0.01573537, -0.06707608, 0.016657263, 0.09829025, -0.026795063, 0.023042196, 0.09438241, -0.025483066, -0.052787006, 0.19730279, 0.021218104) * go_1(pos, 1.0, -1.0);
 	result += mat4x4f(0.19868211, -0.01531125, 0.108596824, -0.035456363, 0.0033609823, 0.057961613, -0.013726211, 0.101742364, 0.33357215, 0.14468077, 0.29711527, -0.24662566, -0.119014986, -0.1899639, 0.11246697, -0.0035374009) * go_1(pos, 1.0, 0.0);
 	result += mat4x4f(-0.05602109, -0.15539522, 0.010730943, 0.057116497, -0.02037749, 0.084210664, -0.028235348, 0.10574697, 0.056925274, 0.07922333, -0.090088, 0.1615985, -0.0044301567, -0.089945644, 0.024176618, -0.041844133) * go_1(pos, 1.0, 1.0);
-	result += vec4(0.0015292584, -0.043625206, -0.09429898, -0.06280405);
+	result += vec4f(0.0015292584, -0.043625206, -0.09429898, -0.06280405);
 	return result;
 }
-`
+`;
 
+//!DESC Anime4K-v3.2-Upscale-CNN-x2-(M)-Conv-4x3x3x8
 //!HOOK MAIN
 //!BIND conv2d_4_tf
 //!SAVE conv2d_5_tf
@@ -232,7 +238,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!HEIGHT conv2d_4_tf.h
 //!COMPONENTS 4
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
-export const fragP6 = /* wgsl */`
+export const fragP6 = /* wgsl */ `
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
@@ -261,11 +267,12 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 	result += mat4x4f(-0.024909232, -0.0308135, 0.12170621, -0.13298757, 0.045828197, -0.1532345, -0.06633672, 0.23591088, 0.04964077, 0.14091493, 0.038343724, -0.029780807, 0.05762822, -0.048930667, -0.02434709, 0.07109019) * go_1(pos, 1.0, -1.0);
 	result += mat4x4f(-0.16039175, 0.3004474, -0.17278233, 0.13677922, 0.18838613, 0.15054552, 0.32901475, -0.1288333, 0.26378244, -0.05119892, 0.34533516, 0.25180495, 0.19452183, 0.0843233, -0.08029368, 0.39877903) * go_1(pos, 1.0, 0.0);
 	result += mat4x4f(-0.07097129, -0.26492423, -0.055032317, -0.093516104, -0.11795062, 0.04086253, -0.07989471, 0.059686553, 0.09378249, 0.45851848, 0.2510942, 0.19599153, 0.019765077, -0.02920918, -0.04125142, -0.13859107) * go_1(pos, 1.0, 1.0);
-	result += vec4(0.04400571, -0.04015565, 0.0140529545, 0.05474095);
+	result += vec4f(0.04400571, -0.04015565, 0.0140529545, 0.05474095);
 	return result;
 }
-`
+`;
 
+//!DESC Anime4K-v3.2-Upscale-CNN-x2-(M)-Conv-4x3x3x8
 //!HOOK MAIN
 //!BIND conv2d_5_tf
 //!SAVE conv2d_6_tf
@@ -273,7 +280,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!HEIGHT conv2d_5_tf.h
 //!COMPONENTS 4
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
-export const fragP7 = /* wgsl */`
+export const fragP7 = /* wgsl */ `
 ${fragShared}
 
 fn go_0(pos: vec4f, x_off: f32, y_off: f32) -> vec4f {
@@ -302,11 +309,12 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 	result += mat4x4f(0.14712952, 0.048995696, 0.05299946, -0.06817572, 0.1498064, -0.079825334, 0.40354064, -0.31789717, -0.1998377, 0.00955295, -0.32318407, 0.30898204, -0.039571725, -0.026203401, -0.16292085, 0.08574385) * go_1(pos, 1.0, -1.0);
 	result += mat4x4f(-0.6353329, -0.56000775, -0.17279743, 0.18198174, -0.19555812, 0.056538377, 0.34365895, -0.07799055, 0.19011354, -0.13952748, 0.029196098, -0.19596763, -0.069196045, -0.17402656, 0.07948411, -0.016226962) * go_1(pos, 1.0, 0.0);
 	result += mat4x4f(0.25592864, 0.083498634, -0.28515807, 0.10789751, 0.0043962947, 0.07085363, 0.048724182, -0.025131436, -0.0049440865, -0.033094388, -0.032935806, 0.04266025, 0.20026933, 0.0927841, -0.006839351, -0.013012285) * go_1(pos, 1.0, 1.0);
-	result += vec4(0.02021373, 0.0014037411, 0.0012718709, 0.017278494);
+	result += vec4f(0.02021373, 0.0014037411, 0.0012718709, 0.017278494);
 	return result;
 }
-`
+`;
 
+//!DESC Anime4K-v3.2-Upscale-CNN-x2-(M)-Conv-4x1x1x56
 //!HOOK MAIN
 //!BIND conv2d_tf
 //!BIND conv2d_1_tf
@@ -320,7 +328,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!HEIGHT conv2d_tf.h
 //!COMPONENTS 4
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
-export const frag8 = /* wgsl */`
+export const frag8 = /* wgsl */ `
 ${fragShared}
 
 @fragment
@@ -357,8 +365,9 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 	result += vec4f(0.016836504, 0.010161949, 0.021351453, 0.01278978);
 	return result;
 }
-`
+`;
 
+//!DESC Anime4K-v3.2-Upscale-CNN-x2-(M)-Depth-to-Space
 //!HOOK MAIN
 //!BIND MAIN
 //!BIND conv2d_last_tf
@@ -366,7 +375,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!WIDTH conv2d_last_tf.w 2 *
 //!HEIGHT conv2d_last_tf.h 2 *
 //!WHEN OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *
-export const fragF = /* wgsl */`
+export const fragF = /* wgsl */ `
 ${fragShared}
 
 @fragment
@@ -396,4 +405,4 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 
   return vec4f(c0, c0, c0, c0) + original;
 }
-`
+`;

@@ -1,3 +1,4 @@
+//!DESC Anime4K-v3.2-AutoDownscalePre-x4
 //!HOOK MAIN
 //!BIND HOOKED
 //!BIND NATIVE
@@ -5,9 +6,9 @@
 //!WIDTH OUTPUT.w 2 /
 //!HEIGHT OUTPUT.h 2 /
 export const whenF =
-  'OUTPUT.w NATIVE.w / 4.0 < OUTPUT.h NATIVE.h / 4.0 < * OUTPUT.w NATIVE.w / 2.4 > OUTPUT.h NATIVE.h / 2.4 > * *'
+  "OUTPUT.w NATIVE.w / 4.0 < OUTPUT.h NATIVE.h / 4.0 < * OUTPUT.w NATIVE.w / 2.4 > OUTPUT.h NATIVE.h / 2.4 > * *";
 
-const fragShared = /* wgsl */`
+const fragShared = /* wgsl */ `
 @group(0) @binding(0) var frame: texture_2d<f32>;
 @group(0) @binding(1) var frame_sampler: sampler;
 
@@ -16,13 +17,13 @@ fn tex_at(tex: texture_2d<f32>, base_pos: vec4f) -> vec4f {
   let uv = base_pos.xy / dims;
   return textureSampleLevel(tex, frame_sampler, uv, 0.0);
 }
-`
+`;
 
-export const fragF = /* wgsl */`
+export const fragF = /* wgsl */ `
 ${fragShared}
 
 @fragment
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   return tex_at(frame, pos);
 }
-`
+`;

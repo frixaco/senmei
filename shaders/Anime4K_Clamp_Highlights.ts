@@ -1,10 +1,11 @@
+//!DESC Anime4K-v4.0-De-Ring-Compute-Statistics
 //!HOOK MAIN
 //!BIND HOOKED
 //!SAVE STATSMAX
 //!COMPONENTS 1
-export const whenP1: string | null = null
+export const whenP1: string | null = null;
 
-const fragShared = /* wgsl */`
+const fragShared = /* wgsl */ `
 @group(0) @binding(0) var frame: texture_2d<f32>;
 @group(0) @binding(1) var frame_sampler: sampler;
 
@@ -21,9 +22,9 @@ fn tex_off(tex: texture_2d<f32>, base_pos: vec4f, x_off: i32, y_off: i32) -> vec
 fn get_luma(rgba: vec4f) -> f32 {
   return dot(rgba, vec4f(0.299, 0.587, 0.114, 0.0));
 }
-`
+`;
 
-const fragSharedStatsMax = /* wgsl */`
+const fragSharedStatsMax = /* wgsl */ `
 ${fragShared}
 @group(0) @binding(2) var stats_max: texture_2d<f32>;
 
@@ -32,9 +33,9 @@ fn tex_at(tex: texture_2d<f32>, base_pos: vec4f) -> vec4f {
   let uv = base_pos.xy / dims;
   return textureSampleLevel(tex, frame_sampler, uv, 0.0);
 }
-`
+`;
 
-export const fragP1 = /* wgsl */`
+export const fragP1 = /* wgsl */ `
 ${fragShared}
 
 @fragment
@@ -48,16 +49,17 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 
   return vec4f(gmax, 0.0, 0.0, 0.0);
 }
-`
+`;
 
+//!DESC Anime4K-v4.0-De-Ring-Compute-Statistics
 //!HOOK MAIN
 //!BIND HOOKED
 //!BIND STATSMAX
 //!SAVE STATSMAX
 //!COMPONENTS 1
-export const whenP2: string | null = null
+export const whenP2: string | null = null;
 
-export const fragP2 = /* wgsl */`
+export const fragP2 = /* wgsl */ `
 ${fragSharedStatsMax}
 
 @fragment
@@ -71,14 +73,15 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 
   return vec4f(gmax, 0.0, 0.0, 0.0);
 }
-`
+`;
 
+//!DESC Anime4K-v4.0-De-Ring-Clamp
 //!HOOK PREKERNEL
 //!BIND HOOKED
 //!BIND STATSMAX
-export const whenP3: string | null = null
+export const whenP3: string | null = null;
 
-export const fragP3 = /* wgsl */`
+export const fragP3 = /* wgsl */ `
 ${fragSharedStatsMax}
 
 @fragment
@@ -90,4 +93,4 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 
   return current - vec4f(delta);
 }
-`
+`;

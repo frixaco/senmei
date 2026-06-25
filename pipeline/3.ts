@@ -35,66 +35,57 @@ import {
   whenP7,
   whenP8,
   whenP9,
-} from '../shaders/Anime4K_Upscale_CNN_x2_VL.ts'
-import {
-  buildWhenContext,
-  createTexture,
-  evaluateWhenExpression,
-  vertexShader,
-} from './shared.ts'
-import type { PipelineStage, WhenReferenceDimensions } from './shared.ts'
+} from "../shaders/Anime4K_Upscale_CNN_x2_VL.ts";
+import { buildWhenContext, createTexture, evaluateWhenExpression, vertexShader } from "./shared.ts";
+import type { PipelineStage, WhenReferenceDimensions } from "./shared.ts";
 
 interface Anime4KUpscaleVLShaders {
-  fragP1: string
-  fragP2: string
-  fragP3: string
-  fragP4: string
-  fragP5: string
-  fragP6: string
-  fragP7: string
-  fragP8: string
-  fragP9: string
-  fragP10: string
-  fragP11: string
-  fragP12: string
-  fragP13: string
-  fragP14: string
-  fragP15: string
-  fragP16: string
-  fragP17: string
-  fragF: string
-  whenP1: string | null
-  whenP2: string | null
-  whenP3: string | null
-  whenP4: string | null
-  whenP5: string | null
-  whenP6: string | null
-  whenP7: string | null
-  whenP8: string | null
-  whenP9: string | null
-  whenP10: string | null
-  whenP11: string | null
-  whenP12: string | null
-  whenP13: string | null
-  whenP14: string | null
-  whenP15: string | null
-  whenP16: string | null
-  whenP17: string | null
-  whenF: string | null
+  fragP1: string;
+  fragP2: string;
+  fragP3: string;
+  fragP4: string;
+  fragP5: string;
+  fragP6: string;
+  fragP7: string;
+  fragP8: string;
+  fragP9: string;
+  fragP10: string;
+  fragP11: string;
+  fragP12: string;
+  fragP13: string;
+  fragP14: string;
+  fragP15: string;
+  fragP16: string;
+  fragP17: string;
+  fragF: string;
+  whenP1: string | null;
+  whenP2: string | null;
+  whenP3: string | null;
+  whenP4: string | null;
+  whenP5: string | null;
+  whenP6: string | null;
+  whenP7: string | null;
+  whenP8: string | null;
+  whenP9: string | null;
+  whenP10: string | null;
+  whenP11: string | null;
+  whenP12: string | null;
+  whenP13: string | null;
+  whenP14: string | null;
+  whenP15: string | null;
+  whenP16: string | null;
+  whenP17: string | null;
+  whenF: string | null;
 }
 
-const passTextureCounts = [
-  0, 0, 2, 2, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12, 14, 14, 14,
-] as const
+const passTextureCounts = [0, 0, 2, 2, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12, 14, 14, 14] as const;
 
 const makeBindingRange = (start: number, end: number) =>
-  Array.from({ length: end - start + 1 }, (_, index) => start + index)
+  Array.from({ length: end - start + 1 }, (_, index) => start + index);
 
-const passBindingIndices = passTextureCounts.map((count) =>
-  makeBindingRange(2, count + 1),
-)
+const passBindingIndices = passTextureCounts.map((count) => makeBindingRange(2, count + 1));
 
-const finalPassBindingIndices = [16, 17, 18] as const
+const finalPassBindingIndices = [16, 17, 18] as const;
 
 function setupAnime4KUpscaleVLStage(
   device: GPUDevice,
@@ -103,11 +94,11 @@ function setupAnime4KUpscaleVLStage(
   shaders: Anime4KUpscaleVLShaders,
   stageLabel: string,
   whenReference: WhenReferenceDimensions,
-  targetFormat: GPUTextureFormat = 'rgba32float',
+  targetFormat: GPUTextureFormat = "rgba32float",
 ): PipelineStage {
-  const w = inputTexture.width
-  const h = inputTexture.height
-  const whenContext = buildWhenContext({ w, h }, whenReference)
+  const w = inputTexture.width;
+  const h = inputTexture.height;
+  const whenContext = buildWhenContext({ w, h }, whenReference);
 
   const passEnabled = [
     evaluateWhenExpression(shaders.whenP1, whenContext),
@@ -127,38 +118,36 @@ function setupAnime4KUpscaleVLStage(
     evaluateWhenExpression(shaders.whenP15, whenContext),
     evaluateWhenExpression(shaders.whenP16, whenContext),
     evaluateWhenExpression(shaders.whenP17, whenContext),
-  ]
+  ];
 
-  const finalPassEnabled = evaluateWhenExpression(shaders.whenF, whenContext)
+  const finalPassEnabled = evaluateWhenExpression(shaders.whenF, whenContext);
 
   if (!finalPassEnabled) {
     return {
       outputTexture: inputTexture,
       encode() {},
-    }
+    };
   }
 
   for (let passIndex = 0; passIndex < passEnabled.length; passIndex += 1) {
     if (!passEnabled[passIndex]) {
-      continue
+      continue;
     }
 
-    const dependenciesCount = passTextureCounts[passIndex]!
+    const dependenciesCount = passTextureCounts[passIndex]!;
     for (let dependencyIndex = 0; dependencyIndex < dependenciesCount; dependencyIndex += 1) {
       if (!passEnabled[dependencyIndex]) {
         throw new Error(
           `${stageLabel}: pass ${passIndex + 1} requires pass ${dependencyIndex + 1} to run`,
-        )
+        );
       }
     }
   }
 
-  const finalDependencies = [14, 15, 16]
+  const finalDependencies = [14, 15, 16];
   for (const dependencyIndex of finalDependencies) {
     if (!passEnabled[dependencyIndex]) {
-      throw new Error(
-        `${stageLabel}: final pass requires pass ${dependencyIndex + 1} to run`,
-      )
+      throw new Error(`${stageLabel}: final pass requires pass ${dependencyIndex + 1} to run`);
     }
   }
 
@@ -180,23 +169,17 @@ function setupAnime4KUpscaleVLStage(
     createTexture(device, w, h, `${stageLabel} conv2d_last_tf`, targetFormat),
     createTexture(device, w, h, `${stageLabel} conv2d_last_tf1`, targetFormat),
     createTexture(device, w, h, `${stageLabel} conv2d_last_tf2`, targetFormat),
-  ]
+  ];
 
-  const outputTexture = createTexture(
-    device,
-    w * 2,
-    h * 2,
-    `${stageLabel} output`,
-    targetFormat,
-  )
-  const inputView = inputTexture.createView()
-  const intermediateViews = intermediateTextures.map((texture) => texture.createView())
-  const outputView = outputTexture.createView()
+  const outputTexture = createTexture(device, w * 2, h * 2, `${stageLabel} output`, targetFormat);
+  const inputView = inputTexture.createView();
+  const intermediateViews = intermediateTextures.map((texture) => texture.createView());
+  const outputView = outputTexture.createView();
 
   const moduleV = device.createShaderModule({
     label: `${stageLabel} vertex shader`,
     code: vertexShader,
-  })
+  });
 
   const fragmentModules = [
     shaders.fragP1,
@@ -221,12 +204,12 @@ function setupAnime4KUpscaleVLStage(
       label: `${stageLabel} fragment pass ${index + 1}`,
       code,
     }),
-  )
+  );
 
   const finalFragmentModule = device.createShaderModule({
     label: `${stageLabel} fragment final pass`,
     code: shaders.fragF,
-  })
+  });
 
   const createBindGroupLayout = (bindingIndices: readonly number[]) =>
     device.createBindGroupLayout({
@@ -234,46 +217,43 @@ function setupAnime4KUpscaleVLStage(
         {
           binding: 0,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: 'unfilterable-float' as const },
+          texture: { sampleType: "unfilterable-float" as const },
         },
         {
           binding: 1,
           visibility: GPUShaderStage.FRAGMENT,
-          sampler: { type: 'non-filtering' as const },
+          sampler: { type: "non-filtering" as const },
         },
         ...bindingIndices.map((binding) => ({
           binding,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: 'unfilterable-float' as const },
+          texture: { sampleType: "unfilterable-float" as const },
         })),
       ],
-    })
+    });
 
-  const bindGroupLayouts = new Map<string, GPUBindGroupLayout>()
-  const pipelineLayouts = new Map<string, GPUPipelineLayout>()
-  const bindGroups = new Map<string, GPUBindGroup>()
+  const bindGroupLayouts = new Map<string, GPUBindGroupLayout>();
+  const pipelineLayouts = new Map<string, GPUPipelineLayout>();
+  const bindGroups = new Map<string, GPUBindGroup>();
 
   const allBindingSets: readonly (readonly number[])[] = [
     ...passBindingIndices,
     finalPassBindingIndices,
-  ]
+  ];
 
   for (const bindingIndices of allBindingSets) {
-    const key = bindingIndices.join(',')
+    const key = bindingIndices.join(",");
     if (bindGroupLayouts.has(key)) {
-      continue
+      continue;
     }
 
-    const bindGroupLayout = createBindGroupLayout(bindingIndices)
-    bindGroupLayouts.set(key, bindGroupLayout)
-    pipelineLayouts.set(
-      key,
-      device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
-    )
+    const bindGroupLayout = createBindGroupLayout(bindingIndices);
+    bindGroupLayouts.set(key, bindGroupLayout);
+    pipelineLayouts.set(key, device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }));
     bindGroups.set(
       key,
       device.createBindGroup({
-        label: `${stageLabel} bind group ${key || 'base'}`,
+        label: `${stageLabel} bind group ${key || "base"}`,
         layout: bindGroupLayout,
         entries: [
           { binding: 0, resource: inputView },
@@ -284,7 +264,7 @@ function setupAnime4KUpscaleVLStage(
           })),
         ],
       }),
-    )
+    );
   }
 
   const createPipeline = (
@@ -297,76 +277,76 @@ function setupAnime4KUpscaleVLStage(
       label,
       layout: pipelineLayout,
       vertex: {
-        entryPoint: 'v',
+        entryPoint: "v",
         module: moduleV,
       },
       fragment: {
-        entryPoint: 'f',
+        entryPoint: "f",
         module: fragmentModule,
         targets: [{ format }],
       },
-    })
+    });
 
   const pipelines = fragmentModules.map((fragmentModule, index) =>
     createPipeline(
       fragmentModule,
-      pipelineLayouts.get(passBindingIndices[index]!.join(','))!,
+      pipelineLayouts.get(passBindingIndices[index]!.join(","))!,
       `${stageLabel} pass ${index + 1}`,
     ),
-  )
+  );
 
   const finalPipeline = createPipeline(
     finalFragmentModule,
-    pipelineLayouts.get(finalPassBindingIndices.join(','))!,
+    pipelineLayouts.get(finalPassBindingIndices.join(","))!,
     `${stageLabel} final pass`,
     targetFormat,
-  )
+  );
 
   const intermediateRenderPasses = intermediateViews.map((view, index) => ({
     enabled: passEnabled[index]!,
     view,
     pipeline: pipelines[index]!,
-    bindGroup: bindGroups.get(passBindingIndices[index]!.join(','))!,
-  }))
+    bindGroup: bindGroups.get(passBindingIndices[index]!.join(","))!,
+  }));
 
   return {
     outputTexture,
     encode(encoder, targetView) {
       for (const renderPassConfig of intermediateRenderPasses) {
         if (!renderPassConfig.enabled) {
-          continue
+          continue;
         }
 
         const pass = encoder.beginRenderPass({
           colorAttachments: [
             {
               view: renderPassConfig.view,
-              loadOp: 'clear' as const,
-              storeOp: 'store' as const,
+              loadOp: "clear" as const,
+              storeOp: "store" as const,
             },
           ],
-        })
-        pass.setPipeline(renderPassConfig.pipeline)
-        pass.setBindGroup(0, renderPassConfig.bindGroup)
-        pass.draw(3)
-        pass.end()
+        });
+        pass.setPipeline(renderPassConfig.pipeline);
+        pass.setBindGroup(0, renderPassConfig.bindGroup);
+        pass.draw(3);
+        pass.end();
       }
 
       const finalPass = encoder.beginRenderPass({
         colorAttachments: [
           {
             view: targetView ?? outputView,
-            loadOp: 'clear' as const,
-            storeOp: 'store' as const,
+            loadOp: "clear" as const,
+            storeOp: "store" as const,
           },
         ],
-      })
-      finalPass.setPipeline(finalPipeline)
-      finalPass.setBindGroup(0, bindGroups.get(finalPassBindingIndices.join(','))!)
-      finalPass.draw(3)
-      finalPass.end()
+      });
+      finalPass.setPipeline(finalPipeline);
+      finalPass.setBindGroup(0, bindGroups.get(finalPassBindingIndices.join(","))!);
+      finalPass.draw(3);
+      finalPass.end();
     },
-  }
+  };
 }
 
 export function setupStage3(
@@ -374,7 +354,7 @@ export function setupStage3(
   inputTexture: GPUTexture,
   sampler: GPUSampler,
   whenReference: WhenReferenceDimensions,
-  targetFormat: GPUTextureFormat = 'rgba32float',
+  targetFormat: GPUTextureFormat = "rgba32float",
 ): PipelineStage {
   return setupAnime4KUpscaleVLStage(
     device,
@@ -418,8 +398,8 @@ export function setupStage3(
       whenP17,
       whenF,
     },
-    'stage3 Anime4K_Upscale_CNN_x2_VL',
+    "stage3 Anime4K_Upscale_CNN_x2_VL",
     whenReference,
     targetFormat,
-  )
+  );
 }

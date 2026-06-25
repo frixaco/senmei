@@ -14,6 +14,7 @@ Favor momentum and clear, reversible changes over heavy process.
 ## Project Goal (Current)
 
 Build a browser-based anime player with real-time upscaling:
+
 - MKV playback pipeline (demux/decode/render)
 - Anime4K parity in WebGPU/WGSL
 - Basic subtitles support
@@ -47,11 +48,13 @@ Build a browser-based anime player with real-time upscaling:
 ## Verification (Right-Sized for WIP)
 
 Use fast manual verification unless task needs more:
+
 - App boots at `localhost:3000`
 - Can load an image and process successfully
 - Output renders and can be saved when expected
 
 If touching pipeline/shaders, also verify:
+
 - pass order remains:
   `Clamp -> Restore_VL -> Upscale_x2_VL -> AutoDownscalePre_x2 -> AutoDownscalePre_x4 -> Upscale_x2_M`
 - stage dimensions/conditions still align with current parity plan in `README.md`
@@ -66,6 +69,7 @@ If touching pipeline/shaders, also verify:
 ## Handoff Expectations
 
 When finishing a task, report:
+
 - assumptions made
 - files changed
 - verification performed

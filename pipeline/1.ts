@@ -1,15 +1,11 @@
-import {
-  fragP1,
-  fragP2,
-  fragP3,
-} from '../shaders/Anime4K_Clamp_Highlights.ts'
-import { createTexture, vertexShader } from './shared.ts'
-import type { PipelineStage } from './shared.ts'
+import { fragP1, fragP2, fragP3 } from "../shaders/Anime4K_Clamp_Highlights.ts";
+import { createTexture, vertexShader } from "./shared.ts";
+import type { PipelineStage } from "./shared.ts";
 
 interface Anime4KClampHighlightsShaders {
-  fragP1: string
-  fragP2: string
-  fragP3: string
+  fragP1: string;
+  fragP2: string;
+  fragP3: string;
 }
 
 function createStatsTexture(
@@ -20,10 +16,10 @@ function createStatsTexture(
 ): GPUTexture {
   return device.createTexture({
     label,
-    format: 'r32float',
+    format: "r32float",
     size: [width, height],
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
-  })
+  });
 }
 
 function setupAnime4KClampHighlightsStage(
@@ -33,23 +29,23 @@ function setupAnime4KClampHighlightsStage(
   shaders: Anime4KClampHighlightsShaders,
   stageLabel: string,
 ): PipelineStage {
-  const workingFormat: GPUTextureFormat = 'rgba32float'
-  const w = inputTexture.width
-  const h = inputTexture.height
+  const workingFormat: GPUTextureFormat = "rgba32float";
+  const w = inputTexture.width;
+  const h = inputTexture.height;
 
-  const statsMaxA = createStatsTexture(device, w, h, `${stageLabel} statsMaxA`)
-  const statsMaxB = createStatsTexture(device, w, h, `${stageLabel} statsMaxB`)
-  const outputTexture = createTexture(device, w, h, `${stageLabel} output`, workingFormat)
+  const statsMaxA = createStatsTexture(device, w, h, `${stageLabel} statsMaxA`);
+  const statsMaxB = createStatsTexture(device, w, h, `${stageLabel} statsMaxB`);
+  const outputTexture = createTexture(device, w, h, `${stageLabel} output`, workingFormat);
 
-  const inputView = inputTexture.createView()
-  const statsMaxAView = statsMaxA.createView()
-  const statsMaxBView = statsMaxB.createView()
-  const outputView = outputTexture.createView()
+  const inputView = inputTexture.createView();
+  const statsMaxAView = statsMaxA.createView();
+  const statsMaxBView = statsMaxB.createView();
+  const outputView = outputTexture.createView();
 
   const moduleV = device.createShaderModule({
     label: `${stageLabel} vertex shader`,
     code: vertexShader,
-  })
+  });
 
   const fragmentModules = {
     p1: device.createShaderModule({
@@ -64,42 +60,42 @@ function setupAnime4KClampHighlightsStage(
       label: `${stageLabel} fragment pass 3`,
       code: shaders.fragP3,
     }),
-  }
+  };
 
   const createBindGroupLayout = (
     numTextures: number,
-    statsSampleType: GPUTextureSampleType = 'float',
+    statsSampleType: GPUTextureSampleType = "float",
   ) =>
     device.createBindGroupLayout({
       entries: [
         {
           binding: 0,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: 'float' as const },
+          texture: { sampleType: "float" as const },
         },
         {
           binding: 1,
           visibility: GPUShaderStage.FRAGMENT,
-          sampler: { type: 'non-filtering' as const },
+          sampler: { type: "non-filtering" as const },
         },
         ...Array.from({ length: numTextures }, (_, i) => ({
           binding: i + 2,
           visibility: GPUShaderStage.FRAGMENT,
           texture: {
-            sampleType: i === 0 ? statsSampleType : ('float' as const),
+            sampleType: i === 0 ? statsSampleType : ("float" as const),
           },
         })),
       ],
-    })
+    });
 
   const bindGroupLayouts = [
     createBindGroupLayout(0),
-    createBindGroupLayout(1, 'unfilterable-float'),
-  ]
+    createBindGroupLayout(1, "unfilterable-float"),
+  ];
 
   const pipelineLayouts = bindGroupLayouts.map((bindGroupLayout) =>
     device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
-  )
+  );
 
   const createPipeline = (
     fragmentModule: GPUShaderModule,
@@ -111,31 +107,21 @@ function setupAnime4KClampHighlightsStage(
       label,
       layout,
       vertex: {
-        entryPoint: 'v',
+        entryPoint: "v",
         module: moduleV,
       },
       fragment: {
-        entryPoint: 'f',
+        entryPoint: "f",
         module: fragmentModule,
         targets: [{ format: targetFormat }],
       },
-    })
+    });
 
   const pipelines = {
-    p1: createPipeline(
-      fragmentModules.p1,
-      pipelineLayouts[0]!,
-      `${stageLabel} pass 1`,
-      'r32float',
-    ),
-    p2: createPipeline(
-      fragmentModules.p2,
-      pipelineLayouts[1]!,
-      `${stageLabel} pass 2`,
-      'r32float',
-    ),
+    p1: createPipeline(fragmentModules.p1, pipelineLayouts[0]!, `${stageLabel} pass 1`, "r32float"),
+    p2: createPipeline(fragmentModules.p2, pipelineLayouts[1]!, `${stageLabel} pass 2`, "r32float"),
     p3: createPipeline(fragmentModules.p3, pipelineLayouts[1]!, `${stageLabel} pass 3`),
-  }
+  };
 
   const createBindGroup = (
     layout: GPUBindGroupLayout,
@@ -145,22 +131,22 @@ function setupAnime4KClampHighlightsStage(
       label: `${stageLabel} bind group`,
       layout,
       entries,
-    })
+    });
 
   const bindGroupPass1 = createBindGroup(bindGroupLayouts[0]!, [
     { binding: 0, resource: inputView },
     { binding: 1, resource: sampler },
-  ])
+  ]);
   const bindGroupPass2 = createBindGroup(bindGroupLayouts[1]!, [
     { binding: 0, resource: inputView },
     { binding: 1, resource: sampler },
     { binding: 2, resource: statsMaxAView },
-  ])
+  ]);
   const bindGroupPass3 = createBindGroup(bindGroupLayouts[1]!, [
     { binding: 0, resource: inputView },
     { binding: 1, resource: sampler },
     { binding: 2, resource: statsMaxBView },
-  ])
+  ]);
 
   return {
     outputTexture,
@@ -169,45 +155,45 @@ function setupAnime4KClampHighlightsStage(
         colorAttachments: [
           {
             view: statsMaxAView,
-            loadOp: 'clear' as const,
-            storeOp: 'store' as const,
+            loadOp: "clear" as const,
+            storeOp: "store" as const,
           },
         ],
-      })
-      pass1.setPipeline(pipelines.p1)
-      pass1.setBindGroup(0, bindGroupPass1)
-      pass1.draw(3)
-      pass1.end()
+      });
+      pass1.setPipeline(pipelines.p1);
+      pass1.setBindGroup(0, bindGroupPass1);
+      pass1.draw(3);
+      pass1.end();
 
       const pass2 = encoder.beginRenderPass({
         colorAttachments: [
           {
             view: statsMaxBView,
-            loadOp: 'clear' as const,
-            storeOp: 'store' as const,
+            loadOp: "clear" as const,
+            storeOp: "store" as const,
           },
         ],
-      })
-      pass2.setPipeline(pipelines.p2)
-      pass2.setBindGroup(0, bindGroupPass2)
-      pass2.draw(3)
-      pass2.end()
+      });
+      pass2.setPipeline(pipelines.p2);
+      pass2.setBindGroup(0, bindGroupPass2);
+      pass2.draw(3);
+      pass2.end();
 
       const pass3 = encoder.beginRenderPass({
         colorAttachments: [
           {
             view: targetView ?? outputView,
-            loadOp: 'clear' as const,
-            storeOp: 'store' as const,
+            loadOp: "clear" as const,
+            storeOp: "store" as const,
           },
         ],
-      })
-      pass3.setPipeline(pipelines.p3)
-      pass3.setBindGroup(0, bindGroupPass3)
-      pass3.draw(3)
-      pass3.end()
+      });
+      pass3.setPipeline(pipelines.p3);
+      pass3.setBindGroup(0, bindGroupPass3);
+      pass3.draw(3);
+      pass3.end();
     },
-  }
+  };
 }
 
 export function setupStage1(
@@ -224,6 +210,6 @@ export function setupStage1(
       fragP2,
       fragP3,
     },
-    'stage1 Anime4K_Clamp_Highlights',
-  )
+    "stage1 Anime4K_Clamp_Highlights",
+  );
 }

@@ -1,12 +1,7 @@
-import { fragF, whenF } from '../shaders/Anime4K_AutoDownscalePre_x2.ts'
-import {
-  buildWhenContext,
-  createTexture,
-  evaluateWhenExpression,
-  vertexShader,
-} from './shared.ts'
-import type { PipelineStage } from './shared.ts'
-import type { WhenReferenceDimensions } from './shared.ts'
+import { fragF, whenF } from "../shaders/Anime4K_AutoDownscalePre_x2.ts";
+import { buildWhenContext, createTexture, evaluateWhenExpression, vertexShader } from "./shared.ts";
+import type { PipelineStage } from "./shared.ts";
+import type { WhenReferenceDimensions } from "./shared.ts";
 
 export function setupStage4(
   device: GPUDevice,
@@ -14,73 +9,70 @@ export function setupStage4(
   sampler: GPUSampler,
   whenReference: WhenReferenceDimensions,
 ): PipelineStage {
-  const workingFormat: GPUTextureFormat = 'rgba32float'
+  const workingFormat: GPUTextureFormat = "rgba32float";
   const shouldRun = evaluateWhenExpression(
     whenF,
-    buildWhenContext(
-      { w: inputTexture.width, h: inputTexture.height },
-      whenReference,
-    ),
-  )
+    buildWhenContext({ w: inputTexture.width, h: inputTexture.height }, whenReference),
+  );
 
   if (!shouldRun) {
     return {
       outputTexture: inputTexture,
       encode() {},
-    }
+    };
   }
 
   const outputTexture = createTexture(
     device,
     Math.max(1, Math.floor(whenReference.output.w)),
     Math.max(1, Math.floor(whenReference.output.h)),
-    'stage4 Anime4K_AutoDownscalePre_x2 output',
+    "stage4 Anime4K_AutoDownscalePre_x2 output",
     workingFormat,
-  )
+  );
 
   const moduleV = device.createShaderModule({
-    label: 'stage4 vertex shader',
+    label: "stage4 vertex shader",
     code: vertexShader,
-  })
+  });
   const moduleF = device.createShaderModule({
-    label: 'stage4 fragment shader',
+    label: "stage4 fragment shader",
     code: fragF,
-  })
+  });
 
   const bindGroupLayout = device.createBindGroupLayout({
     entries: [
       {
         binding: 0,
         visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: 'unfilterable-float' },
+        texture: { sampleType: "unfilterable-float" },
       },
       {
         binding: 1,
         visibility: GPUShaderStage.FRAGMENT,
-        sampler: { type: 'non-filtering' },
+        sampler: { type: "non-filtering" },
       },
     ],
-  })
+  });
   const pipelineLayout = device.createPipelineLayout({
     bindGroupLayouts: [bindGroupLayout],
-  })
+  });
 
   const pipeline = device.createRenderPipeline({
-    label: 'stage4 Anime4K_AutoDownscalePre_x2',
+    label: "stage4 Anime4K_AutoDownscalePre_x2",
     layout: pipelineLayout,
     vertex: {
       module: moduleV,
-      entryPoint: 'v',
+      entryPoint: "v",
     },
     fragment: {
       module: moduleF,
-      entryPoint: 'f',
+      entryPoint: "f",
       targets: [{ format: workingFormat }],
     },
-  })
+  });
 
   const bindGroup = device.createBindGroup({
-    label: 'stage4 bind group',
+    label: "stage4 bind group",
     layout: bindGroupLayout,
     entries: [
       {
@@ -92,9 +84,9 @@ export function setupStage4(
         resource: sampler,
       },
     ],
-  })
+  });
 
-  const outputView = outputTexture.createView()
+  const outputView = outputTexture.createView();
 
   return {
     outputTexture,
@@ -103,15 +95,15 @@ export function setupStage4(
         colorAttachments: [
           {
             view: targetView ?? outputView,
-            loadOp: 'clear',
-            storeOp: 'store',
+            loadOp: "clear",
+            storeOp: "store",
           },
         ],
-      })
-      pass.setPipeline(pipeline)
-      pass.setBindGroup(0, bindGroup)
-      pass.draw(3)
-      pass.end()
+      });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.draw(3);
+      pass.end();
     },
-  }
+  };
 }

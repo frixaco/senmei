@@ -15,6 +15,7 @@ For starters, I went with one only (CNN x2 M one).
 ---
 
 After successfully porting the a single shader manually (no AI) I started looking at others:
+
 - there 3 shaders that very small - relatively simple and quick
 - remaining 2 are much larger - requires much more effort and correctness check
 
@@ -25,5 +26,6 @@ In terms of code ownership, I'd say it's 50/50 (I own half, AI owns the half) - 
 I realized WebGPU/WGSL/shader stuff is not as easily learnable as many other stuff, lots of obscure API, low amount of examples. Given that I was not just porting GLSL shader but GLSL shaders integrated with mpv player, I decided to not spend too much time on this (not worth it for my goals) and use AI but with strict control over its output (strict review focused on GLSL+mpv setup parity).
 
 Two other low-priority things I let AI write:
+
 - Benchmark button - run the whole pipeline against an image multiple times, calculate time it takes and report
 - Save output PNG button - the pipeline currently output 4k in 8bit quality, the button will save it in 16bits instead for max output quality

@@ -1,11 +1,11 @@
-import { setupStage1 } from './pipeline/1.ts'
-import { setupStage2 } from './pipeline/2.ts'
-import { setupStage3 } from './pipeline/3.ts'
-import { setupStage4 } from './pipeline/4.ts'
-import { setupStage5 } from './pipeline/5.ts'
-import { setupStage6 } from './pipeline/6.ts'
-import { convertRgba16FloatBitsToUint16, encodeRgba16Png } from './png16.ts'
-import type { PipelineStage } from './pipeline/shared.ts'
+import { setupStage1 } from "./pipeline/1.ts";
+import { setupStage2 } from "./pipeline/2.ts";
+import { setupStage3 } from "./pipeline/3.ts";
+import { setupStage4 } from "./pipeline/4.ts";
+import { setupStage5 } from "./pipeline/5.ts";
+import { setupStage6 } from "./pipeline/6.ts";
+import { convertRgba16FloatBitsToUint16, encodeRgba16Png } from "./png16.ts";
+import type { PipelineStage } from "./pipeline/shared.ts";
 
 const presentVertexShader = /* wgsl */ `
 struct VSOut {
@@ -23,7 +23,7 @@ fn v(@builtin(vertex_index) vertexIndex: u32) -> VSOut {
   out.pos = vec4f(pos[vertexIndex], 0, 1);
   return out;
 }
-`
+`;
 
 const presentFragmentShader = /* wgsl */ `
 @group(0) @binding(0) var src: texture_2d<f32>;
@@ -36,250 +36,231 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let color = textureSampleLevel(src, srcSampler, uv, 0.0);
   return vec4f(color.rgb, 1.0);
 }
-`
+`;
 
 function getElementById<T extends HTMLElement>(id: string): T {
-  const element = document.getElementById(id)
+  const element = document.getElementById(id);
   if (!element) {
-    throw new Error(`Missing required element: #${id}`)
+    throw new Error(`Missing required element: #${id}`);
   }
 
-  return element as T
+  return element as T;
 }
 
-function on(
-  id: string,
-  eventName: string,
-  handler: (event: Event) => void,
-): void {
-  getElementById<HTMLElement>(id).addEventListener(eventName, handler)
+function on(id: string, eventName: string, handler: (event: Event) => void): void {
+  getElementById<HTMLElement>(id).addEventListener(eventName, handler);
 }
 
-const original = getElementById<HTMLImageElement>('original')
-const comparison = getElementById<HTMLElement>('comparison')
-const qualityMeta = getElementById<HTMLElement>('qualityMeta')
-const processBtn = getElementById<HTMLButtonElement>('processBtn')
-const benchmarkBtn = getElementById<HTMLButtonElement>('benchmarkBtn')
-const saveBtn = getElementById<HTMLButtonElement>('saveBtn')
+const original = getElementById<HTMLImageElement>("original");
+const comparison = getElementById<HTMLElement>("comparison");
+const qualityMeta = getElementById<HTMLElement>("qualityMeta");
+const processBtn = getElementById<HTMLButtonElement>("processBtn");
+const benchmarkBtn = getElementById<HTMLButtonElement>("benchmarkBtn");
+const saveBtn = getElementById<HTMLButtonElement>("saveBtn");
 
-const BENCHMARK_WARMUP_FRAMES = 40
-const BENCHMARK_SAMPLE_FRAMES = 180
-const FPS_24_FRAME_BUDGET_MS = 1000 / 24
-const FPS_60_FRAME_BUDGET_MS = 1000 / 60
-const DEFAULT_COMPARE_SPLIT = 0.5
+qualityMeta.textContent = "No run yet.";
+
+const BENCHMARK_WARMUP_FRAMES = 40;
+const BENCHMARK_SAMPLE_FRAMES = 180;
+const FPS_24_FRAME_BUDGET_MS = 1000 / 24;
+const FPS_60_FRAME_BUDGET_MS = 1000 / 60;
+const DEFAULT_COMPARE_SPLIT = 0.5;
 
 interface SavedOutput {
-  device: GPUDevice
-  texture: GPUTexture
-  sampler: GPUSampler
-  width: number
-  height: number
-  sourceName: string
+  device: GPUDevice;
+  texture: GPUTexture;
+  sampler: GPUSampler;
+  width: number;
+  height: number;
+  sourceName: string;
 }
 
 interface UpscaleRuntime {
-  inputWidth: number
-  inputHeight: number
-  device: GPUDevice
-  inputTexture: GPUTexture
-  inputBitmap: ImageBitmap
-  stageChain: PipelineStage[]
-  finalTexture: GPUTexture
-  frameSampler: GPUSampler
-  context: GPUCanvasContext
-  presentPipeline: GPURenderPipeline
-  presentBindGroup: GPUBindGroup
+  inputWidth: number;
+  inputHeight: number;
+  device: GPUDevice;
+  inputTexture: GPUTexture;
+  inputBitmap: ImageBitmap;
+  stageChain: PipelineStage[];
+  finalTexture: GPUTexture;
+  frameSampler: GPUSampler;
+  context: GPUCanvasContext;
+  presentPipeline: GPURenderPipeline;
+  presentBindGroup: GPUBindGroup;
 }
 
 interface BenchmarkSummary {
-  avgMs: number
-  p50Ms: number
-  p95Ms: number
-  p99Ms: number
+  avgMs: number;
+  p50Ms: number;
+  p95Ms: number;
+  p99Ms: number;
 }
 
 interface ThroughputSummary {
-  avgMs: number
-  fps: number
+  avgMs: number;
+  fps: number;
 }
 
 function toFixed(value: number, digits = 2): string {
   if (!Number.isFinite(value)) {
-    return 'inf'
+    return "inf";
   }
-  return value.toFixed(digits)
+  return value.toFixed(digits);
 }
 
 function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max)
+  return Math.min(Math.max(value, min), max);
 }
 
-let selectedFile: File | null = null
-let hasOutput = false
-let savedOutput: SavedOutput | null = null
+let selectedFile: File | null = null;
+let hasOutput = false;
+let savedOutput: SavedOutput | null = null;
 
 function sourceNameFromFile(file: File | null): string {
-  return file?.name.replace(/\.[^/.]+$/, '') ?? 'image'
+  return file?.name.replace(/\.[^/.]+$/, "") ?? "image";
 }
 
 function setButtonsIdleState(): void {
-  processBtn.disabled = false
-  benchmarkBtn.disabled = selectedFile === null
-  saveBtn.disabled = !hasOutput
+  processBtn.disabled = false;
+  benchmarkBtn.disabled = selectedFile === null;
+  saveBtn.disabled = !hasOutput;
 }
 
 function setComparisonSplit(split: number): void {
-  comparison.style.setProperty(
-    '--compare-split',
-    `${clamp(split, 0, 1) * 100}%`,
-  )
+  comparison.style.setProperty("--compare-split", `${clamp(split, 0, 1) * 100}%`);
 }
 
 function syncComparisonViewport(width: number, height: number): void {
   if (width <= 0 || height <= 0) {
-    return
+    return;
   }
 
-  comparison.style.aspectRatio = `${width} / ${height}`
+  comparison.style.aspectRatio = `${width} / ${height}`;
 }
 
 function resetComparisonViewport(): void {
-  comparison.style.removeProperty('aspect-ratio')
-  setComparisonSplit(DEFAULT_COMPARE_SPLIT)
+  comparison.style.removeProperty("aspect-ratio");
+  setComparisonSplit(DEFAULT_COMPARE_SPLIT);
 }
 
 function clearOutputPreview(): void {
-  const canvas = getElementById<HTMLCanvasElement>('canvas')
-  canvas.width = 0
-  canvas.height = 0
+  const canvas = getElementById<HTMLCanvasElement>("canvas");
+  canvas.width = 0;
+  canvas.height = 0;
 }
 
 function updateComparisonSplitFromPointer(clientX: number): void {
-  const rect = comparison.getBoundingClientRect()
+  const rect = comparison.getBoundingClientRect();
   if (rect.width === 0) {
-    return
+    return;
   }
 
-  setComparisonSplit((clientX - rect.left) / rect.width)
+  setComparisonSplit((clientX - rect.left) / rect.width);
 }
 
 function beginComparisonDrag(event: PointerEvent): void {
-  if (event.button !== 0 && event.pointerType === 'mouse') {
-    return
+  if (event.button !== 0 && event.pointerType === "mouse") {
+    return;
   }
 
-  event.preventDefault()
-  updateComparisonSplitFromPointer(event.clientX)
-  comparison.setPointerCapture(event.pointerId)
+  event.preventDefault();
+  updateComparisonSplitFromPointer(event.clientX);
+  comparison.setPointerCapture(event.pointerId);
 }
 
 function moveComparisonDrag(event: PointerEvent): void {
   if (!comparison.hasPointerCapture(event.pointerId)) {
-    return
+    return;
   }
 
-  updateComparisonSplitFromPointer(event.clientX)
+  updateComparisonSplitFromPointer(event.clientX);
 }
 
 function endComparisonDrag(event: PointerEvent): void {
   if (comparison.hasPointerCapture(event.pointerId)) {
-    comparison.releasePointerCapture(event.pointerId)
+    comparison.releasePointerCapture(event.pointerId);
   }
 }
 
 function ensureWebGpuAvailable(): void {
-  if (!('gpu' in navigator)) {
-    throw new Error('WebGPU not supported in this browser.')
+  if (!("gpu" in navigator)) {
+    throw new Error("WebGPU not supported in this browser.");
   }
 }
 
-function encodeUpscalePasses(
-  encoder: GPUCommandEncoder,
-  stageChain: PipelineStage[],
-): void {
+function encodeUpscalePasses(encoder: GPUCommandEncoder, stageChain: PipelineStage[]): void {
   for (const stage of stageChain) {
-    stage.encode(encoder)
+    stage.encode(encoder);
   }
 }
 
-function encodePresentPass(
-  encoder: GPUCommandEncoder,
-  runtime: UpscaleRuntime,
-): void {
+function encodePresentPass(encoder: GPUCommandEncoder, runtime: UpscaleRuntime): void {
   const presentPass = encoder.beginRenderPass({
     colorAttachments: [
       {
         view: runtime.context.getCurrentTexture().createView(),
-        loadOp: 'clear',
-        storeOp: 'store',
+        loadOp: "clear",
+        storeOp: "store",
       },
     ],
-  })
-  presentPass.setPipeline(runtime.presentPipeline)
-  presentPass.setBindGroup(0, runtime.presentBindGroup)
-  presentPass.draw(3)
-  presentPass.end()
+  });
+  presentPass.setPipeline(runtime.presentPipeline);
+  presentPass.setBindGroup(0, runtime.presentBindGroup);
+  presentPass.draw(3);
+  presentPass.end();
 }
 
 function percentile(sortedValues: number[], p: number): number {
   if (sortedValues.length === 0) {
-    return Number.NaN
+    return Number.NaN;
   }
 
-  const index = (sortedValues.length - 1) * p
-  const lo = Math.floor(index)
-  const hi = Math.ceil(index)
+  const index = (sortedValues.length - 1) * p;
+  const lo = Math.floor(index);
+  const hi = Math.ceil(index);
   if (lo === hi) {
-    return sortedValues[lo]!
+    return sortedValues[lo]!;
   }
 
-  const weight = index - lo
-  return sortedValues[lo]! * (1 - weight) + sortedValues[hi]! * weight
+  const weight = index - lo;
+  return sortedValues[lo]! * (1 - weight) + sortedValues[hi]! * weight;
 }
 
 function summarizeBenchmarkSamples(samples: number[]): BenchmarkSummary {
   if (samples.length === 0) {
-    throw new Error('No benchmark samples were recorded.')
+    throw new Error("No benchmark samples were recorded.");
   }
 
-  const sorted = [...samples].sort((a, b) => a - b)
-  const avgMs = samples.reduce((sum, value) => sum + value, 0) / samples.length
+  const sorted = [...samples].sort((a, b) => a - b);
+  const avgMs = samples.reduce((sum, value) => sum + value, 0) / samples.length;
   return {
     avgMs,
     p50Ms: percentile(sorted, 0.5),
     p95Ms: percentile(sorted, 0.95),
     p99Ms: percentile(sorted, 0.99),
-  }
+  };
 }
 
-function formatBenchmarkSummary(
-  label: string,
-  summary: BenchmarkSummary,
-): string {
-  const avgFps =
-    summary.avgMs > 0 ? 1000 / summary.avgMs : Number.POSITIVE_INFINITY
+function formatBenchmarkSummary(label: string, summary: BenchmarkSummary): string {
+  const avgFps = summary.avgMs > 0 ? 1000 / summary.avgMs : Number.POSITIVE_INFINITY;
   return (
     `${label}: avg ${toFixed(summary.avgMs, 2)} ms (${toFixed(avgFps, 1)} fps), ` +
     `p50 ${toFixed(summary.p50Ms, 2)} ms, ` +
     `p95 ${toFixed(summary.p95Ms, 2)} ms, ` +
     `p99 ${toFixed(summary.p99Ms, 2)} ms`
-  )
+  );
 }
 
-function formatThroughputSummary(
-  label: string,
-  summary: ThroughputSummary,
-): string {
+function formatThroughputSummary(label: string, summary: ThroughputSummary): string {
   return (
-    `${label}: avg ${toFixed(summary.avgMs, 2)} ms ` +
-    `(${toFixed(summary.fps, 1)} fps sustained)`
-  )
+    `${label}: avg ${toFixed(summary.avgMs, 2)} ms ` + `(${toFixed(summary.fps, 1)} fps sustained)`
+  );
 }
 
 function benchmarkBudgetVerdict(label: string, avgMs: number): string {
-  const fps24Verdict = avgMs <= FPS_24_FRAME_BUDGET_MS ? 'PASS' : 'FAIL'
-  const fps60Verdict = avgMs <= FPS_60_FRAME_BUDGET_MS ? 'PASS' : 'FAIL'
-  return `${label}: 24fps ${fps24Verdict}, 60fps ${fps60Verdict}`
+  const fps24Verdict = avgMs <= FPS_24_FRAME_BUDGET_MS ? "PASS" : "FAIL";
+  const fps60Verdict = avgMs <= FPS_60_FRAME_BUDGET_MS ? "PASS" : "FAIL";
+  return `${label}: 24fps ${fps24Verdict}, 60fps ${fps60Verdict}`;
 }
 
 function uploadRuntimeInputFrame(runtime: UpscaleRuntime): void {
@@ -287,132 +268,112 @@ function uploadRuntimeInputFrame(runtime: UpscaleRuntime): void {
     { source: runtime.inputBitmap, flipY: false },
     { texture: runtime.inputTexture },
     { width: runtime.inputWidth, height: runtime.inputHeight },
-  )
+  );
 }
 
 async function createUpscaleRuntime(file: File): Promise<UpscaleRuntime> {
-  ensureWebGpuAvailable()
+  ensureWebGpuAvailable();
 
   const adapter = await navigator.gpu.requestAdapter({
-    powerPreference: 'high-performance',
-  })
+    powerPreference: "high-performance",
+  });
   if (!adapter) {
-    throw new Error('No GPU adapter found.')
+    throw new Error("No GPU adapter found.");
   }
 
-  const device = await adapter.requestDevice()
-  const format = navigator.gpu.getPreferredCanvasFormat()
+  const device = await adapter.requestDevice();
+  const format = navigator.gpu.getPreferredCanvasFormat();
   const bitmap = await createImageBitmap(file, {
-    colorSpaceConversion: 'none',
-  })
-  const inputWidth = bitmap.width
-  const inputHeight = bitmap.height
+    colorSpaceConversion: "none",
+  });
+  const inputWidth = bitmap.width;
+  const inputHeight = bitmap.height;
 
   const inputTexture = device.createTexture({
-    label: 'initial frame texture',
-    format: 'rgba8unorm',
+    label: "initial frame texture",
+    format: "rgba8unorm",
     size: [inputWidth, inputHeight],
     usage:
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.COPY_DST |
       GPUTextureUsage.RENDER_ATTACHMENT,
-  })
+  });
   device.queue.copyExternalImageToTexture(
     { source: bitmap, flipY: false },
     { texture: inputTexture },
     { width: inputWidth, height: inputHeight },
-  )
+  );
 
   const frameSampler = device.createSampler({
-    addressModeU: 'clamp-to-edge',
-    addressModeV: 'clamp-to-edge',
-  })
+    addressModeU: "clamp-to-edge",
+    addressModeV: "clamp-to-edge",
+  });
 
-  const targetOutputWidth = inputWidth * 2
-  const targetOutputHeight = inputHeight * 2
+  const targetOutputWidth = inputWidth * 2;
+  const targetOutputHeight = inputHeight * 2;
   const whenReference = {
     native: { w: inputWidth, h: inputHeight },
     output: { w: targetOutputWidth, h: targetOutputHeight },
-  }
+  };
 
-  const stage1 = setupStage1(device, inputTexture, frameSampler)
-  const stage2 = setupStage2(device, stage1.outputTexture, frameSampler)
-  const stage3 = setupStage3(
-    device,
-    stage2.outputTexture,
-    frameSampler,
-    whenReference,
-  )
-  const stage4 = setupStage4(
-    device,
-    stage3.outputTexture,
-    frameSampler,
-    whenReference,
-  )
-  const stage5 = setupStage5(
-    device,
-    stage4.outputTexture,
-    frameSampler,
-    whenReference,
-  )
-  const stage6 = setupStage6(
-    device,
-    stage5.outputTexture,
-    frameSampler,
-    whenReference,
-  )
-  const stageChain = [stage1, stage2, stage3, stage4, stage5, stage6]
-  const finalTexture = stage6.outputTexture
+  const stage1 = setupStage1(device, inputTexture, frameSampler);
+  const stage2 = setupStage2(device, stage1.outputTexture, frameSampler);
+  const stage3 = setupStage3(device, stage2.outputTexture, frameSampler, whenReference);
+  const stage4 = setupStage4(device, stage3.outputTexture, frameSampler, whenReference);
+  const stage5 = setupStage5(device, stage4.outputTexture, frameSampler, whenReference);
+  const stage6 = setupStage6(device, stage5.outputTexture, frameSampler, whenReference);
+  const stageChain = [stage1, stage2, stage3, stage4, stage5, stage6];
+  const finalTexture = stage6.outputTexture;
 
-  const canvas = getElementById<HTMLCanvasElement>('canvas')
-  canvas.width = finalTexture.width
-  canvas.height = finalTexture.height
-  syncComparisonViewport(inputWidth, inputHeight)
+  const canvas = getElementById<HTMLCanvasElement>("canvas");
+  canvas.width = finalTexture.width;
+  canvas.height = finalTexture.height;
+  syncComparisonViewport(inputWidth, inputHeight);
 
-  const context = canvas.getContext('webgpu')
+  const context = canvas.getContext("webgpu");
   if (!context) {
-    throw new Error('Unable to acquire webgpu context.')
+    throw new Error("Unable to acquire webgpu context.");
   }
-  context.configure({ device, format })
+  context.configure({ device, format });
 
   const presentBindGroupLayout = device.createBindGroupLayout({
     entries: [
       {
         binding: 0,
         visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: 'unfilterable-float' },
+        texture: { sampleType: "unfilterable-float" },
       },
       {
         binding: 1,
         visibility: GPUShaderStage.FRAGMENT,
-        sampler: { type: 'non-filtering' },
+        sampler: { type: "non-filtering" },
       },
     ],
-  })
+  });
   const presentPipelineLayout = device.createPipelineLayout({
     bindGroupLayouts: [presentBindGroupLayout],
-  })
+  });
   const presentPipeline = device.createRenderPipeline({
-    label: 'present final texture',
+    label: "present final texture",
     layout: presentPipelineLayout,
     vertex: {
       module: device.createShaderModule({
-        label: 'present vertex shader',
+        label: "present vertex shader",
         code: presentVertexShader,
       }),
-      entryPoint: 'v',
+      entryPoint: "v",
     },
     fragment: {
       module: device.createShaderModule({
-        label: 'present fragment shader',
+        label: "present fragment shader",
         code: presentFragmentShader,
       }),
-      entryPoint: 'f',
+      entryPoint: "f",
       targets: [{ format }],
     },
-  })
+  });
   const presentBindGroup = device.createBindGroup({
-    label: 'present bind group',
+    label: "present bind group",
     layout: presentBindGroupLayout,
     entries: [
       {
@@ -424,7 +385,7 @@ async function createUpscaleRuntime(file: File): Promise<UpscaleRuntime> {
         resource: frameSampler,
       },
     ],
-  })
+  });
 
   return {
     inputWidth,
@@ -438,7 +399,7 @@ async function createUpscaleRuntime(file: File): Promise<UpscaleRuntime> {
     context,
     presentPipeline,
     presentBindGroup,
-  }
+  };
 }
 
 async function benchmarkRuntime(
@@ -448,32 +409,30 @@ async function benchmarkRuntime(
   warmupFrames: number,
   sampleFrames: number,
 ): Promise<number[]> {
-  const samples: number[] = []
-  const totalFrames = warmupFrames + sampleFrames
+  const samples: number[] = [];
+  const totalFrames = warmupFrames + sampleFrames;
 
   for (let frame = 0; frame < totalFrames; frame += 1) {
-    const start = performance.now()
+    const start = performance.now();
     if (includeFrameUpload) {
-      uploadRuntimeInputFrame(runtime)
+      uploadRuntimeInputFrame(runtime);
     }
     const encoder = runtime.device.createCommandEncoder({
-      label: includePresentPass
-        ? 'benchmark end-to-end frame'
-        : 'benchmark core frame',
-    })
-    encodeUpscalePasses(encoder, runtime.stageChain)
+      label: includePresentPass ? "benchmark end-to-end frame" : "benchmark core frame",
+    });
+    encodeUpscalePasses(encoder, runtime.stageChain);
     if (includePresentPass) {
-      encodePresentPass(encoder, runtime)
+      encodePresentPass(encoder, runtime);
     }
-    runtime.device.queue.submit([encoder.finish()])
-    await runtime.device.queue.onSubmittedWorkDone()
-    const elapsed = performance.now() - start
+    runtime.device.queue.submit([encoder.finish()]);
+    await runtime.device.queue.onSubmittedWorkDone();
+    const elapsed = performance.now() - start;
     if (frame >= warmupFrames) {
-      samples.push(elapsed)
+      samples.push(elapsed);
     }
   }
 
-  return samples
+  return samples;
 }
 
 async function benchmarkRuntimeThroughput(
@@ -484,130 +443,130 @@ async function benchmarkRuntimeThroughput(
   sampleFrames: number,
 ): Promise<ThroughputSummary> {
   if (sampleFrames <= 0) {
-    throw new Error('Sample frame count must be greater than 0.')
+    throw new Error("Sample frame count must be greater than 0.");
   }
 
   for (let frame = 0; frame < warmupFrames; frame += 1) {
     if (includeFrameUpload) {
-      uploadRuntimeInputFrame(runtime)
+      uploadRuntimeInputFrame(runtime);
     }
     const encoder = runtime.device.createCommandEncoder({
       label: includePresentPass
-        ? 'benchmark throughput warmup end-to-end frame'
-        : 'benchmark throughput warmup core frame',
-    })
-    encodeUpscalePasses(encoder, runtime.stageChain)
+        ? "benchmark throughput warmup end-to-end frame"
+        : "benchmark throughput warmup core frame",
+    });
+    encodeUpscalePasses(encoder, runtime.stageChain);
     if (includePresentPass) {
-      encodePresentPass(encoder, runtime)
+      encodePresentPass(encoder, runtime);
     }
-    runtime.device.queue.submit([encoder.finish()])
+    runtime.device.queue.submit([encoder.finish()]);
   }
-  await runtime.device.queue.onSubmittedWorkDone()
+  await runtime.device.queue.onSubmittedWorkDone();
 
-  const start = performance.now()
+  const start = performance.now();
   for (let frame = 0; frame < sampleFrames; frame += 1) {
     if (includeFrameUpload) {
-      uploadRuntimeInputFrame(runtime)
+      uploadRuntimeInputFrame(runtime);
     }
     const encoder = runtime.device.createCommandEncoder({
       label: includePresentPass
-        ? 'benchmark throughput end-to-end frame'
-        : 'benchmark throughput core frame',
-    })
-    encodeUpscalePasses(encoder, runtime.stageChain)
+        ? "benchmark throughput end-to-end frame"
+        : "benchmark throughput core frame",
+    });
+    encodeUpscalePasses(encoder, runtime.stageChain);
     if (includePresentPass) {
-      encodePresentPass(encoder, runtime)
+      encodePresentPass(encoder, runtime);
     }
-    runtime.device.queue.submit([encoder.finish()])
+    runtime.device.queue.submit([encoder.finish()]);
   }
-  await runtime.device.queue.onSubmittedWorkDone()
-  const elapsed = performance.now() - start
-  const avgMs = elapsed / sampleFrames
-  const fps = (sampleFrames * 1000) / elapsed
-  return { avgMs, fps }
+  await runtime.device.queue.onSubmittedWorkDone();
+  const elapsed = performance.now() - start;
+  const avgMs = elapsed / sampleFrames;
+  const fps = (sampleFrames * 1000) / elapsed;
+  return { avgMs, fps };
 }
 
 async function exportSavedOutputToBlob(output: SavedOutput): Promise<Blob> {
-  const { device, texture, sampler, width, height } = output
+  const { device, texture, sampler, width, height } = output;
 
   const exportTexture = device.createTexture({
-    label: 'export texture rgba16float',
-    format: 'rgba16float',
+    label: "export texture rgba16float",
+    format: "rgba16float",
     size: [width, height],
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-  })
+  });
 
   const bindGroupLayout = device.createBindGroupLayout({
     entries: [
       {
         binding: 0,
         visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: 'unfilterable-float' },
+        texture: { sampleType: "unfilterable-float" },
       },
       {
         binding: 1,
         visibility: GPUShaderStage.FRAGMENT,
-        sampler: { type: 'non-filtering' },
+        sampler: { type: "non-filtering" },
       },
     ],
-  })
+  });
   const pipelineLayout = device.createPipelineLayout({
     bindGroupLayouts: [bindGroupLayout],
-  })
+  });
   const pipeline = device.createRenderPipeline({
-    label: 'export texture pipeline',
+    label: "export texture pipeline",
     layout: pipelineLayout,
     vertex: {
       module: device.createShaderModule({
-        label: 'export vertex shader',
+        label: "export vertex shader",
         code: presentVertexShader,
       }),
-      entryPoint: 'v',
+      entryPoint: "v",
     },
     fragment: {
       module: device.createShaderModule({
-        label: 'export fragment shader',
+        label: "export fragment shader",
         code: presentFragmentShader,
       }),
-      entryPoint: 'f',
-      targets: [{ format: 'rgba16float' }],
+      entryPoint: "f",
+      targets: [{ format: "rgba16float" }],
     },
-  })
+  });
   const bindGroup = device.createBindGroup({
-    label: 'export bind group',
+    label: "export bind group",
     layout: bindGroupLayout,
     entries: [
       { binding: 0, resource: texture.createView() },
       { binding: 1, resource: sampler },
     ],
-  })
+  });
 
-  const bytesPerPixel = 8
-  const unpaddedBytesPerRow = width * bytesPerPixel
-  const paddedBytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256
-  const readbackSize = paddedBytesPerRow * height
+  const bytesPerPixel = 8;
+  const unpaddedBytesPerRow = width * bytesPerPixel;
+  const paddedBytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
+  const readbackSize = paddedBytesPerRow * height;
 
   const readbackBuffer = device.createBuffer({
-    label: 'export readback buffer',
+    label: "export readback buffer",
     size: readbackSize,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-  })
+  });
 
-  const encoder = device.createCommandEncoder({ label: 'export encoder' })
+  const encoder = device.createCommandEncoder({ label: "export encoder" });
 
   const pass = encoder.beginRenderPass({
     colorAttachments: [
       {
         view: exportTexture.createView(),
-        loadOp: 'clear',
-        storeOp: 'store',
+        loadOp: "clear",
+        storeOp: "store",
       },
     ],
-  })
-  pass.setPipeline(pipeline)
-  pass.setBindGroup(0, bindGroup)
-  pass.draw(3)
-  pass.end()
+  });
+  pass.setPipeline(pipeline);
+  pass.setBindGroup(0, bindGroup);
+  pass.draw(3);
+  pass.end();
 
   encoder.copyTextureToBuffer(
     { texture: exportTexture },
@@ -617,221 +576,208 @@ async function exportSavedOutputToBlob(output: SavedOutput): Promise<Blob> {
       rowsPerImage: height,
     },
     { width, height, depthOrArrayLayers: 1 },
-  )
+  );
 
-  device.queue.submit([encoder.finish()])
-  await device.queue.onSubmittedWorkDone()
+  device.queue.submit([encoder.finish()]);
+  await device.queue.onSubmittedWorkDone();
 
-  await readbackBuffer.mapAsync(GPUMapMode.READ)
-  const mapped = new Uint16Array(readbackBuffer.getMappedRange())
-  const paddedWordsPerRow = paddedBytesPerRow / 2
-  const unpaddedWordsPerRow = unpaddedBytesPerRow / 2
-  const packedHalfFloat = new Uint16Array(unpaddedWordsPerRow * height)
+  await readbackBuffer.mapAsync(GPUMapMode.READ);
+  const mapped = new Uint16Array(readbackBuffer.getMappedRange());
+  const paddedWordsPerRow = paddedBytesPerRow / 2;
+  const unpaddedWordsPerRow = unpaddedBytesPerRow / 2;
+  const packedHalfFloat = new Uint16Array(unpaddedWordsPerRow * height);
 
   for (let y = 0; y < height; y += 1) {
-    const srcOffset = y * paddedWordsPerRow
-    const dstOffset = y * unpaddedWordsPerRow
-    packedHalfFloat.set(
-      mapped.subarray(srcOffset, srcOffset + unpaddedWordsPerRow),
-      dstOffset,
-    )
+    const srcOffset = y * paddedWordsPerRow;
+    const dstOffset = y * unpaddedWordsPerRow;
+    packedHalfFloat.set(mapped.subarray(srcOffset, srcOffset + unpaddedWordsPerRow), dstOffset);
   }
 
-  readbackBuffer.unmap()
-  readbackBuffer.destroy()
-  exportTexture.destroy()
-  const png16Rgba = convertRgba16FloatBitsToUint16(packedHalfFloat)
-  return encodeRgba16Png(width, height, png16Rgba)
+  readbackBuffer.unmap();
+  readbackBuffer.destroy();
+  exportTexture.destroy();
+  const png16Rgba = convertRgba16FloatBitsToUint16(packedHalfFloat);
+  return encodeRgba16Png(width, height, png16Rgba);
 }
 
-on('inputImg', 'change', (event) => {
-  const target = event.target
+on("inputImg", "change", (event) => {
+  const target = event.target;
   if (!(target instanceof HTMLInputElement)) {
-    return
+    return;
   }
 
-  const file = target.files?.[0] ?? null
+  const file = target.files?.[0] ?? null;
   if (!file) {
-    selectedFile = null
-    hasOutput = false
-    savedOutput = null
-    clearOutputPreview()
-    original.removeAttribute('src')
-    resetComparisonViewport()
-    qualityMeta.textContent = 'No run yet.'
-    setButtonsIdleState()
-    return
+    selectedFile = null;
+    hasOutput = false;
+    savedOutput = null;
+    clearOutputPreview();
+    original.removeAttribute("src");
+    resetComparisonViewport();
+    qualityMeta.textContent = "No run yet.";
+    setButtonsIdleState();
+    return;
   }
 
-  selectedFile = file
-  hasOutput = false
-  savedOutput = null
-  original.removeAttribute('src')
-  clearOutputPreview()
-  resetComparisonViewport()
-  setButtonsIdleState()
-  const reader = new FileReader()
+  selectedFile = file;
+  hasOutput = false;
+  savedOutput = null;
+  original.removeAttribute("src");
+  clearOutputPreview();
+  resetComparisonViewport();
+  setButtonsIdleState();
+  const reader = new FileReader();
 
   reader.onload = (loadEvent) => {
-    const result = loadEvent.target?.result
-    if (typeof result !== 'string') {
-      return
+    const result = loadEvent.target?.result;
+    if (typeof result !== "string") {
+      return;
     }
 
-    original.setAttribute('src', result)
-  }
+    original.setAttribute("src", result);
+  };
 
-  reader.readAsDataURL(file)
-})
+  reader.readAsDataURL(file);
+});
 
-original.addEventListener('load', () => {
-  syncComparisonViewport(original.naturalWidth, original.naturalHeight)
-})
+original.addEventListener("load", () => {
+  syncComparisonViewport(original.naturalWidth, original.naturalHeight);
+});
 
-comparison.addEventListener('pointerdown', beginComparisonDrag)
-comparison.addEventListener('pointermove', moveComparisonDrag)
-comparison.addEventListener('pointerup', endComparisonDrag)
-comparison.addEventListener('pointercancel', endComparisonDrag)
+comparison.addEventListener("pointerdown", beginComparisonDrag);
+comparison.addEventListener("pointermove", moveComparisonDrag);
+comparison.addEventListener("pointerup", endComparisonDrag);
+comparison.addEventListener("pointercancel", endComparisonDrag);
 
-resetComparisonViewport()
+resetComparisonViewport();
 
-on('saveBtn', 'click', async () => {
-  const canvas = getElementById<HTMLCanvasElement>('canvas')
+on("saveBtn", "click", async () => {
+  const canvas = getElementById<HTMLCanvasElement>("canvas");
   if (!hasOutput || !savedOutput || canvas.width === 0 || canvas.height === 0) {
-    qualityMeta.textContent = 'Run Process before saving output.'
-    return
+    qualityMeta.textContent = "Run Process before saving output.";
+    return;
   }
-  qualityMeta.textContent = 'Saving PNG...'
+  qualityMeta.textContent = "Saving PNG...";
 
   try {
-    const blob = await exportSavedOutputToBlob(savedOutput)
-    const fileName = `${savedOutput.sourceName}-upscaled-${savedOutput.width}x${savedOutput.height}.png`
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = fileName
-    document.body.appendChild(anchor)
-    anchor.click()
-    document.body.removeChild(anchor)
-    URL.revokeObjectURL(url)
-    qualityMeta.textContent = `Saved ${fileName}`
+    const blob = await exportSavedOutputToBlob(savedOutput);
+    const fileName = `${savedOutput.sourceName}-upscaled-${savedOutput.width}x${savedOutput.height}.png`;
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    qualityMeta.textContent = `Saved ${fileName}`;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    qualityMeta.textContent = `Save failed: ${message}`
+    const message = error instanceof Error ? error.message : String(error);
+    qualityMeta.textContent = `Save failed: ${message}`;
   }
-})
+});
 
-on('benchmarkBtn', 'click', async () => {
-  const file = selectedFile
+on("benchmarkBtn", "click", async () => {
+  const file = selectedFile;
   if (!file) {
-    qualityMeta.textContent = 'Pick an image first.'
-    return
+    qualityMeta.textContent = "Pick an image first.";
+    return;
   }
 
-  processBtn.disabled = true
-  benchmarkBtn.disabled = true
-  saveBtn.disabled = true
-  qualityMeta.textContent = 'Preparing benchmark runtime...'
+  processBtn.disabled = true;
+  benchmarkBtn.disabled = true;
+  saveBtn.disabled = true;
+  qualityMeta.textContent = "Preparing benchmark runtime...";
 
   try {
-    const runtime = await createUpscaleRuntime(file)
-    console.log('Benchmark dimensions', {
+    const runtime = await createUpscaleRuntime(file);
+    console.log("Benchmark dimensions", {
       input: `${runtime.inputWidth}x${runtime.inputHeight}`,
       output: `${runtime.finalTexture.width}x${runtime.finalTexture.height}`,
       warmupFrames: BENCHMARK_WARMUP_FRAMES,
       sampleFrames: BENCHMARK_SAMPLE_FRAMES,
-    })
+    });
 
-    qualityMeta.textContent = 'Benchmarking core (no present)...'
+    qualityMeta.textContent = "Benchmarking core (no present)...";
     const coreSamples = await benchmarkRuntime(
       runtime,
       false,
       false,
       BENCHMARK_WARMUP_FRAMES,
       BENCHMARK_SAMPLE_FRAMES,
-    )
+    );
 
-    qualityMeta.textContent = 'Benchmarking video latency (upload + present)...'
+    qualityMeta.textContent = "Benchmarking video latency (upload + present)...";
     const endToEndSamples = await benchmarkRuntime(
       runtime,
       true,
       true,
       BENCHMARK_WARMUP_FRAMES,
       BENCHMARK_SAMPLE_FRAMES,
-    )
+    );
 
-    qualityMeta.textContent =
-      'Benchmarking video throughput (upload + pipeline)...'
+    qualityMeta.textContent = "Benchmarking video throughput (upload + pipeline)...";
     const throughputSummary = await benchmarkRuntimeThroughput(
       runtime,
       false,
       true,
       BENCHMARK_WARMUP_FRAMES,
       BENCHMARK_SAMPLE_FRAMES,
-    )
+    );
 
-    const coreSummary = summarizeBenchmarkSamples(coreSamples)
-    const endToEndSummary = summarizeBenchmarkSamples(endToEndSamples)
+    const coreSummary = summarizeBenchmarkSamples(coreSamples);
+    const endToEndSummary = summarizeBenchmarkSamples(endToEndSamples);
     qualityMeta.textContent = [
       `Benchmark ${runtime.inputWidth}x${runtime.inputHeight} -> ` +
         `${runtime.finalTexture.width}x${runtime.finalTexture.height}`,
       `Warmup: ${BENCHMARK_WARMUP_FRAMES} frames, sample: ${BENCHMARK_SAMPLE_FRAMES} frames`,
-      formatBenchmarkSummary('Core', coreSummary),
-      formatBenchmarkSummary(
-        'Video latency (upload + present)',
-        endToEndSummary,
-      ),
-      formatThroughputSummary(
-        'Video throughput (upload + pipeline)',
-        throughputSummary,
-      ),
-      benchmarkBudgetVerdict('Video latency p95 budget', endToEndSummary.p95Ms),
-      benchmarkBudgetVerdict(
-        'Video throughput avg budget',
-        throughputSummary.avgMs,
-      ),
-    ].join('\n')
+      formatBenchmarkSummary("Core", coreSummary),
+      formatBenchmarkSummary("Video latency (upload + present)", endToEndSummary),
+      formatThroughputSummary("Video throughput (upload + pipeline)", throughputSummary),
+      benchmarkBudgetVerdict("Video latency p95 budget", endToEndSummary.p95Ms),
+      benchmarkBudgetVerdict("Video throughput avg budget", throughputSummary.avgMs),
+    ].join("\n");
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    qualityMeta.textContent = `Benchmark failed: ${message}`
+    const message = error instanceof Error ? error.message : String(error);
+    qualityMeta.textContent = `Benchmark failed: ${message}`;
   } finally {
-    setButtonsIdleState()
+    setButtonsIdleState();
   }
-})
+});
 
-on('processBtn', 'click', async () => {
-  const file = selectedFile
+on("processBtn", "click", async () => {
+  const file = selectedFile;
   if (!file) {
-    qualityMeta.textContent = 'Pick an image first.'
-    return
+    qualityMeta.textContent = "Pick an image first.";
+    return;
   }
 
-  processBtn.disabled = true
-  benchmarkBtn.disabled = true
-  saveBtn.disabled = true
-  hasOutput = false
-  savedOutput = null
-  qualityMeta.textContent = 'Running pipeline...'
+  processBtn.disabled = true;
+  benchmarkBtn.disabled = true;
+  saveBtn.disabled = true;
+  hasOutput = false;
+  savedOutput = null;
+  qualityMeta.textContent = "Running pipeline...";
 
   try {
-    const runtime = await createUpscaleRuntime(file)
-    console.log('Upscale dimensions', {
+    const runtime = await createUpscaleRuntime(file);
+    console.log("Upscale dimensions", {
       input: `${runtime.inputWidth}x${runtime.inputHeight}`,
       output: `${runtime.finalTexture.width}x${runtime.finalTexture.height}`,
-    })
+    });
 
-    const pipelineStart = performance.now()
+    const pipelineStart = performance.now();
     const encoder = runtime.device.createCommandEncoder({
-      label: 'pipeline encoder',
-    })
-    encodeUpscalePasses(encoder, runtime.stageChain)
-    encodePresentPass(encoder, runtime)
+      label: "pipeline encoder",
+    });
+    encodeUpscalePasses(encoder, runtime.stageChain);
+    encodePresentPass(encoder, runtime);
 
-    runtime.device.queue.submit([encoder.finish()])
-    await runtime.device.queue.onSubmittedWorkDone()
-    const runtimeMs = performance.now() - pipelineStart
+    runtime.device.queue.submit([encoder.finish()]);
+    await runtime.device.queue.onSubmittedWorkDone();
+    const runtimeMs = performance.now() - pipelineStart;
 
-    hasOutput = true
+    hasOutput = true;
     savedOutput = {
       device: runtime.device,
       texture: runtime.finalTexture,
@@ -839,14 +785,14 @@ on('processBtn', 'click', async () => {
       width: runtime.finalTexture.width,
       height: runtime.finalTexture.height,
       sourceName: sourceNameFromFile(file),
-    }
+    };
     qualityMeta.textContent =
       `Upscale complete: ${runtime.inputWidth}x${runtime.inputHeight} -> ` +
-      `${runtime.finalTexture.width}x${runtime.finalTexture.height} in ${toFixed(runtimeMs, 1)} ms.`
+      `${runtime.finalTexture.width}x${runtime.finalTexture.height} in ${toFixed(runtimeMs, 1)} ms.`;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    qualityMeta.textContent = `Upscale failed: ${message}`
+    const message = error instanceof Error ? error.message : String(error);
+    qualityMeta.textContent = `Upscale failed: ${message}`;
   } finally {
-    setButtonsIdleState()
+    setButtonsIdleState();
   }
-})
+});

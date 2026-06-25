@@ -16,25 +16,23 @@ import {
   fragP7,
   fragP8,
   fragP9,
-} from '../shaders/Anime4K_Restore_CNN_VL.ts'
-import { createTexture, vertexShader } from './shared.ts'
-import type { PipelineStage } from './shared.ts'
+} from "../shaders/Anime4K_Restore_CNN_VL.ts";
+import { createTexture, vertexShader } from "./shared.ts";
+import type { PipelineStage } from "./shared.ts";
 
-const passTextureCounts = [
-  0, 0, 2, 2, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12, 14, 14, 16,
-] as const
+const passTextureCounts = [0, 0, 2, 2, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12, 14, 14, 16] as const;
 
 const makeBindingRange = (start: number, end: number) =>
-  Array.from({ length: end - start + 1 }, (_, index) => start + index)
+  Array.from({ length: end - start + 1 }, (_, index) => start + index);
 
 const passBindingIndices = passTextureCounts.map((count, passIndex) => {
   // Pass 17 only uses conv2d_tf_1..conv2d_tf_7_1 (bindings 4..17).
   if (passIndex === 16) {
-    return makeBindingRange(4, 17)
+    return makeBindingRange(4, 17);
   }
 
-  return makeBindingRange(2, count + 1)
-})
+  return makeBindingRange(2, count + 1);
+});
 
 const fragmentShaders = [
   fragP1,
@@ -54,18 +52,18 @@ const fragmentShaders = [
   fragP15,
   fragP16,
   fragP17,
-]
+];
 
 export function setupStage2(
   device: GPUDevice,
   inputTexture: GPUTexture,
   sampler: GPUSampler,
 ): PipelineStage {
-  const stageLabel = 'stage2 Anime4K_Restore_CNN_VL'
-  const workingFormat: GPUTextureFormat = 'rgba32float'
+  const stageLabel = "stage2 Anime4K_Restore_CNN_VL";
+  const workingFormat: GPUTextureFormat = "rgba32float";
   // const workingFormat: GPUTextureFormat = 'rgba16float'
-  const w = inputTexture.width
-  const h = inputTexture.height
+  const w = inputTexture.width;
+  const h = inputTexture.height;
 
   const intermediateTextures = [
     createTexture(device, w, h, `${stageLabel} conv2d_tf`, workingFormat),
@@ -84,27 +82,25 @@ export function setupStage2(
     createTexture(device, w, h, `${stageLabel} conv2d_6_tf1`, workingFormat),
     createTexture(device, w, h, `${stageLabel} conv2d_7_tf`, workingFormat),
     createTexture(device, w, h, `${stageLabel} conv2d_7_tf1`, workingFormat),
-  ]
+  ];
 
-  const outputTexture = createTexture(device, w, h, `${stageLabel} output`, workingFormat)
+  const outputTexture = createTexture(device, w, h, `${stageLabel} output`, workingFormat);
 
-  const inputView = inputTexture.createView()
-  const intermediateViews = intermediateTextures.map((texture) =>
-    texture.createView(),
-  )
-  const outputView = outputTexture.createView()
+  const inputView = inputTexture.createView();
+  const intermediateViews = intermediateTextures.map((texture) => texture.createView());
+  const outputView = outputTexture.createView();
 
   const moduleV = device.createShaderModule({
     label: `${stageLabel} vertex shader`,
     code: vertexShader,
-  })
+  });
 
   const fragmentModules = fragmentShaders.map((code, index) =>
     device.createShaderModule({
       label: `${stageLabel} fragment pass ${index + 1}`,
       code,
     }),
-  )
+  );
 
   const createBindGroupLayout = (bindingIndices: readonly number[]) =>
     device.createBindGroupLayout({
@@ -112,41 +108,38 @@ export function setupStage2(
         {
           binding: 0,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: 'unfilterable-float' as const },
+          texture: { sampleType: "unfilterable-float" as const },
         },
         {
           binding: 1,
           visibility: GPUShaderStage.FRAGMENT,
-          sampler: { type: 'non-filtering' as const },
+          sampler: { type: "non-filtering" as const },
         },
         ...bindingIndices.map((binding) => ({
           binding,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: 'unfilterable-float' as const },
+          texture: { sampleType: "unfilterable-float" as const },
         })),
       ],
-    })
+    });
 
-  const bindGroupLayouts = new Map<string, GPUBindGroupLayout>()
-  const pipelineLayouts = new Map<string, GPUPipelineLayout>()
-  const bindGroups = new Map<string, GPUBindGroup>()
+  const bindGroupLayouts = new Map<string, GPUBindGroupLayout>();
+  const pipelineLayouts = new Map<string, GPUPipelineLayout>();
+  const bindGroups = new Map<string, GPUBindGroup>();
 
   for (const bindingIndices of passBindingIndices) {
-    const key = bindingIndices.join(',')
+    const key = bindingIndices.join(",");
     if (bindGroupLayouts.has(key)) {
-      continue
+      continue;
     }
 
-    const bindGroupLayout = createBindGroupLayout(bindingIndices)
-    bindGroupLayouts.set(key, bindGroupLayout)
-    pipelineLayouts.set(
-      key,
-      device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
-    )
+    const bindGroupLayout = createBindGroupLayout(bindingIndices);
+    bindGroupLayouts.set(key, bindGroupLayout);
+    pipelineLayouts.set(key, device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }));
     bindGroups.set(
       key,
       device.createBindGroup({
-        label: `${stageLabel} bind group ${key || 'base'}`,
+        label: `${stageLabel} bind group ${key || "base"}`,
         layout: bindGroupLayout,
         entries: [
           { binding: 0, resource: inputView },
@@ -157,7 +150,7 @@ export function setupStage2(
           })),
         ],
       }),
-    )
+    );
   }
 
   const createPipeline = (
@@ -169,29 +162,29 @@ export function setupStage2(
       label,
       layout: pipelineLayout,
       vertex: {
-        entryPoint: 'v',
+        entryPoint: "v",
         module: moduleV,
       },
       fragment: {
-        entryPoint: 'f',
+        entryPoint: "f",
         module: fragmentModule,
         targets: [{ format: workingFormat }],
       },
-    })
+    });
 
   const pipelines = fragmentModules.map((fragmentModule, index) =>
     createPipeline(
       fragmentModule,
-      pipelineLayouts.get(passBindingIndices[index]!.join(','))!,
+      pipelineLayouts.get(passBindingIndices[index]!.join(","))!,
       `${stageLabel} pass ${index + 1}`,
     ),
-  )
+  );
 
   const intermediateRenderPasses = intermediateViews.map((view, index) => ({
     view,
     pipeline: pipelines[index]!,
-    bindGroup: bindGroups.get(passBindingIndices[index]!.join(','))!,
-  }))
+    bindGroup: bindGroups.get(passBindingIndices[index]!.join(","))!,
+  }));
 
   return {
     outputTexture,
@@ -201,30 +194,30 @@ export function setupStage2(
           colorAttachments: [
             {
               view: renderPassConfig.view,
-              loadOp: 'clear' as const,
-              storeOp: 'store' as const,
+              loadOp: "clear" as const,
+              storeOp: "store" as const,
             },
           ],
-        })
-        pass.setPipeline(renderPassConfig.pipeline)
-        pass.setBindGroup(0, renderPassConfig.bindGroup)
-        pass.draw(3)
-        pass.end()
+        });
+        pass.setPipeline(renderPassConfig.pipeline);
+        pass.setBindGroup(0, renderPassConfig.bindGroup);
+        pass.draw(3);
+        pass.end();
       }
 
       const finalPass = encoder.beginRenderPass({
         colorAttachments: [
           {
             view: targetView ?? outputView,
-            loadOp: 'clear' as const,
-            storeOp: 'store' as const,
+            loadOp: "clear" as const,
+            storeOp: "store" as const,
           },
         ],
-      })
-      finalPass.setPipeline(pipelines[16]!)
-      finalPass.setBindGroup(0, bindGroups.get(passBindingIndices[16]!.join(','))!)
-      finalPass.draw(3)
-      finalPass.end()
+      });
+      finalPass.setPipeline(pipelines[16]!);
+      finalPass.setBindGroup(0, bindGroups.get(passBindingIndices[16]!.join(","))!);
+      finalPass.draw(3);
+      finalPass.end();
     },
-  }
+  };
 }

@@ -1,9 +1,5 @@
 import { open } from "fs/promises";
-import {
-  ELEMENT_INFO,
-  LEVEL_0_AND_1_ELEMENT_IDS,
-  type ElementName,
-} from "./constants";
+import { ELEMENT_INFO, LEVEL_0_AND_1_ELEMENT_IDS, type ElementName } from "./constants";
 
 const filePath = "./data/fate08.mkv";
 // const filePath = "./data/hellmode07.mkv";
@@ -21,10 +17,7 @@ async function main() {
 }
 
 type Backend = {
-  fetchBytes: (
-    offset: number,
-    size?: number,
-  ) => Promise<Uint8Array<ArrayBuffer>>;
+  fetchBytes: (offset: number, size?: number) => Promise<Uint8Array<ArrayBuffer>>;
 };
 
 const MAX_SLOTS = 64;
@@ -52,10 +45,7 @@ class LRU<K = number, T = Uint8Array<ArrayBuffer>> {
   }
 }
 
-async function createBackend(
-  filePath: string,
-  source: "local" | "http",
-): Promise<Backend> {
+async function createBackend(filePath: string, source: "local" | "http"): Promise<Backend> {
   if (source === "local") {
     const handle = await open(filePath, "r");
 
@@ -81,9 +71,7 @@ async function createBackend(
       });
 
       if (response.status !== 206) {
-        throw new Error(
-          `Status: ${response.status}; Message: ${response.text()}`,
-        );
+        throw new Error(`Status: ${response.status}; Message: ${response.text()}`);
       }
 
       return new Uint8Array(await response.arrayBuffer());
@@ -125,19 +113,13 @@ async function createBufferedReader(backend: Backend): Promise<BufferedReader> {
     cache.put(chunkIndex, chunk);
 
     if (!cache.get(chunkIndex + 1) && !prefetched.get(chunkIndex + 1)) {
-      prefetched.put(
-        chunkIndex + 1,
-        backend.fetchBytes((chunkIndex + 1) * CHUNK_SIZE, CHUNK_SIZE),
-      );
+      prefetched.put(chunkIndex + 1, backend.fetchBytes((chunkIndex + 1) * CHUNK_SIZE, CHUNK_SIZE));
     }
 
     return chunk.slice(localOffset, localOffset + size);
   }
 
-  function read(
-    offset: number,
-    size: number,
-  ): Uint8Array | Promise<Uint8Array> {
+  function read(offset: number, size: number): Uint8Array | Promise<Uint8Array> {
     const chunkIndex = Math.floor(offset / CHUNK_SIZE);
     const localOffset = offset % CHUNK_SIZE;
 
@@ -272,9 +254,7 @@ async function openMatroska(reader: BufferedReader) {
     }
 
     if (!elementInfo.unknownSizeAllowed && size === -1) {
-      throw new Error(
-        `${elementInfo.name} is not allowed to have unknown size`,
-      );
+      throw new Error(`${elementInfo.name} is not allowed to have unknown size`);
     }
 
     if (elementInfo.unknownSizeAllowed && size === -1) {
