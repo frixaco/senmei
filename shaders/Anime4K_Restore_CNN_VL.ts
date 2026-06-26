@@ -29,7 +29,7 @@ fn tex_off(tex: texture_2d<f32>, base_pos: vec4f, x_off: f32, y_off: f32) -> vec
 }
 `;
 
-const restoreWhen: string | null = null;
+const restoreWhen = null;
 export const whenP1 = restoreWhen;
 export const whenP2 = restoreWhen;
 export const whenP3 = restoreWhen;

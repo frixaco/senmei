@@ -1,42 +1,819 @@
-import { setupStage1 } from "./pipeline/1.ts";
-import { setupStage2 } from "./pipeline/2.ts";
-import { setupStage3 } from "./pipeline/3.ts";
-import { setupStage4 } from "./pipeline/4.ts";
-import { setupStage5 } from "./pipeline/5.ts";
-import { setupStage6 } from "./pipeline/6.ts";
-import { convertRgba16FloatBitsToUint16, encodeRgba16Png } from "./png16.ts";
-import type { PipelineStage } from "./pipeline/shared.ts";
+import * as autoDownscalePreX2 from "./shaders/Anime4K_AutoDownscalePre_x2.ts";
+import * as autoDownscalePreX4 from "./shaders/Anime4K_AutoDownscalePre_x4.ts";
+import * as clamp from "./shaders/Anime4K_Clamp_Highlights.ts";
+import * as restoreVL from "./shaders/Anime4K_Restore_CNN_VL.ts";
+import * as upscaleX2M from "./shaders/Anime4K_Upscale_CNN_x2_M.ts";
+import * as upscaleX2VL from "./shaders/Anime4K_Upscale_CNN_x2_VL.ts";
 
-const presentVertexShader = /* wgsl */ `
-struct VSOut {
-  @builtin(position) pos: vec4f,
+const UPSCALE_NUMBER = 2;
+
+const original = getElementById<HTMLImageElement>("original");
+const canvas = getElementById<HTMLCanvasElement>("canvas")!;
+const ctx = canvas.getContext("webgpu");
+
+const status = getElementById<HTMLElement>("status");
+const benchmarkPopup = getElementById<HTMLElement>("benchmarkPopup");
+const benchmarkMeta = getElementById<HTMLElement>("benchmarkMeta");
+const benchmarkCloseBtn = getElementById<HTMLButtonElement>("benchmarkCloseBtn");
+const processBtn = getElementById<HTMLButtonElement>("processBtn");
+const benchmarkBtn = getElementById<HTMLButtonElement>("benchmarkBtn");
+const saveBtn = getElementById<HTMLButtonElement>("saveBtn");
+
+const adapter = await navigator.gpu.requestAdapter();
+if (!adapter) throw new Error("no gpu adapter");
+const device = await adapter.requestDevice();
+
+const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
+if (!ctx) throw new Error("No WebGPU canvas context");
+ctx.configure({
+  device,
+  format: canvasFormat,
+  alphaMode: "opaque",
+});
+
+const sampler = device.createSampler({
+  magFilter: "nearest",
+  minFilter: "nearest",
+  addressModeU: "clamp-to-edge",
+  addressModeV: "clamp-to-edge",
+});
+
+let selectedFile: File | null = null;
+
+status.textContent = "Pick an image";
+setButtonsIdleState();
+
+on("processBtn", "click", async () => {
+  if (!selectedFile) {
+    status.textContent = "Pick an image";
+    return;
+  }
+
+  status.textContent = "Processing...";
+
+  await original.decode();
+  canvas.width = original.naturalWidth * UPSCALE_NUMBER;
+  canvas.height = original.naturalHeight * UPSCALE_NUMBER;
+
+  doWebGPU();
+
+  canvas.classList.remove("hidden");
+
+  status.textContent = `Processed ${selectedFile.name}`;
+});
+
+function doWebGPU() {
+  if (!ctx) throw new Error("No WebGPU canvas context");
+
+  const imageBitmap = original;
+  const sourceSize = {
+    width: imageBitmap.naturalWidth,
+    height: imageBitmap.naturalHeight,
+  };
+  const outputSize = {
+    width: canvas.width,
+    height: canvas.height,
+  };
+  const sourceTexture = device.createTexture({
+    size: sourceSize,
+    format: "rgba16float",
+    usage:
+      GPUTextureUsage.COPY_DST |
+      GPUTextureUsage.TEXTURE_BINDING |
+      GPUTextureUsage.RENDER_ATTACHMENT,
+  });
+
+  device.queue.copyExternalImageToTexture(
+    { source: imageBitmap },
+    { texture: sourceTexture, colorSpace: "srgb", premultipliedAlpha: false },
+    [imageBitmap.naturalWidth, imageBitmap.naturalHeight],
+  );
+
+  const textures = new Map<string, Texture>([
+    ["MAIN", { gpu: sourceTexture, ...sourceSize }],
+    ["NATIVE", { gpu: sourceTexture, ...sourceSize }],
+  ]);
+
+  for (const pass of passes) {
+    if (
+      pass.when &&
+      !pass.when({
+        main: getTexture("MAIN"),
+        native: getTexture("NATIVE"),
+        output: outputSize,
+      })
+    ) {
+      continue;
+    }
+
+    const frameName = pass.textures[0];
+    if (!frameName) {
+      throw new Error(`Pass ${pass.name} has no binding 0 texture`);
+    }
+
+    const frameTexture = getTexture(frameName);
+    let targetSize: Size = frameTexture;
+    if (pass.size.from === "OUTPUT") {
+      targetSize = outputSize;
+    } else if (pass.size.from !== "FRAME") {
+      targetSize = getTexture(pass.size.from);
+    }
+
+    const outputTexture = createOutputTexture({
+      width: targetSize.width * pass.size.scale,
+      height: targetSize.height * pass.size.scale,
+    });
+
+    // NOTE: pass.textures does not include sampler which is at index 1
+    const textureBindings = Object.keys(pass.textures).map(Number);
+    const bindGroupLayout = createBindGroupLayout(textureBindings);
+    const pipeline = createPipeline(pass.shader, "rgba16float", bindGroupLayout);
+
+    const textureEntries = textureBindings.map((binding): GPUBindGroupEntry => {
+      const textureName = pass.textures[binding];
+      if (!textureName) {
+        throw new Error(`Pass ${pass.name} has no texture for binding ${binding}`);
+      }
+
+      return {
+        binding,
+        resource: getTexture(textureName).gpu.createView(),
+      };
+    });
+    const entries: GPUBindGroupEntry[] = [
+      {
+        binding: 1,
+        resource: sampler,
+      },
+      ...textureEntries,
+    ];
+    const bindGroup = device.createBindGroup({
+      layout: bindGroupLayout,
+      entries,
+    });
+
+    render(pipeline, bindGroup, outputTexture.gpu.createView());
+
+    if (pass.save) {
+      textures.set(pass.save, outputTexture);
+    }
+  }
+
+  const pipeline = createPipeline(defaultFragmentShader, canvasFormat);
+  const mainTexture = getTexture("MAIN");
+
+  const bindGroup = device.createBindGroup({
+    layout: pipeline.getBindGroupLayout(0),
+    entries: [
+      {
+        binding: 0,
+        resource: mainTexture.gpu.createView(),
+      },
+      {
+        binding: 1,
+        resource: sampler,
+      },
+    ],
+  });
+
+  render(pipeline, bindGroup, ctx.getCurrentTexture().createView());
+
+  function getTexture(name: string): Texture {
+    const texture = textures.get(name);
+    if (!texture) {
+      throw new Error(`Pass ${name} has not been produced yet`);
+    }
+
+    return texture;
+  };
 }
+
+on("inputImg", "change", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const file = target.files?.[0] ?? null;
+  selectedFile = file;
+  // TODO: clear
+  benchmarkPopup.classList.add("hidden");
+  setButtonsIdleState();
+
+  if (!file) {
+    original.removeAttribute("src");
+    status.textContent = "Pick an image";
+    return;
+  }
+
+  const reader = new FileReader();
+
+  reader.onload = (loadEvent) => {
+    const result = loadEvent.target?.result;
+    if (typeof result !== "string") {
+      return;
+    }
+
+    original.setAttribute("src", result);
+    status.textContent = `Loaded: ${file.name}`;
+  };
+
+  reader.onerror = () => {
+    original.removeAttribute("src");
+    status.textContent = `Failed: ${reader.error?.message ?? "unable to read file"}`;
+  };
+
+  reader.readAsDataURL(file);
+});
+
+on("benchmarkBtn", "click", () => {
+  if (!selectedFile) {
+    hideBenchmarkPopup();
+    status.textContent = "Pick an image";
+    return;
+  }
+
+  showBenchmarkPopup(`Benchmark\nFile: ${selectedFile.name}\nStatus: pipeline placeholder`);
+});
+
+benchmarkCloseBtn.addEventListener("click", hideBenchmarkPopup);
+
+const passes: Pass[] = [
+  {
+    name: "clamp-p1",
+    textures: { 0: "MAIN" },
+    when: clamp.whenP1,
+    save: "STATSMAX",
+    size: { from: "FRAME", scale: 1 },
+    shader: clamp.fragP1,
+  },
+  {
+    name: "clamp-p2",
+    textures: { 0: "MAIN", 2: "STATSMAX" },
+    when: clamp.whenP2,
+    save: "STATSMAX",
+    size: { from: "FRAME", scale: 1 },
+    shader: clamp.fragP2,
+  },
+  {
+    name: "restore-vl-p1",
+    textures: { 0: "MAIN" },
+    when: restoreVL.whenP1,
+    save: "conv2d_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP1,
+  },
+  {
+    name: "restore-vl-p2",
+    textures: { 0: "MAIN" },
+    when: restoreVL.whenP2,
+    save: "conv2d_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP2,
+  },
+  {
+    name: "restore-vl-p3",
+    textures: { 0: "conv2d_tf", 2: "conv2d_tf", 3: "conv2d_tf1" },
+    when: restoreVL.whenP3,
+    save: "conv2d_1_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP3,
+  },
+  {
+    name: "restore-vl-p4",
+    textures: { 0: "conv2d_tf", 2: "conv2d_tf", 3: "conv2d_tf1" },
+    when: restoreVL.whenP4,
+    save: "conv2d_1_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP4,
+  },
+  {
+    name: "restore-vl-p5",
+    textures: { 0: "conv2d_1_tf", 4: "conv2d_1_tf", 5: "conv2d_1_tf1" },
+    when: restoreVL.whenP5,
+    save: "conv2d_2_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP5,
+  },
+  {
+    name: "restore-vl-p6",
+    textures: { 0: "conv2d_1_tf", 4: "conv2d_1_tf", 5: "conv2d_1_tf1" },
+    when: restoreVL.whenP6,
+    save: "conv2d_2_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP6,
+  },
+  {
+    name: "restore-vl-p7",
+    textures: { 0: "conv2d_2_tf", 6: "conv2d_2_tf", 7: "conv2d_2_tf1" },
+    when: restoreVL.whenP7,
+    save: "conv2d_3_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP7,
+  },
+  {
+    name: "restore-vl-p8",
+    textures: { 0: "conv2d_2_tf", 6: "conv2d_2_tf", 7: "conv2d_2_tf1" },
+    when: restoreVL.whenP8,
+    save: "conv2d_3_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP8,
+  },
+  {
+    name: "restore-vl-p9",
+    textures: { 0: "conv2d_3_tf", 8: "conv2d_3_tf", 9: "conv2d_3_tf1" },
+    when: restoreVL.whenP9,
+    save: "conv2d_4_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP9,
+  },
+  {
+    name: "restore-vl-p10",
+    textures: { 0: "conv2d_3_tf", 8: "conv2d_3_tf", 9: "conv2d_3_tf1" },
+    when: restoreVL.whenP10,
+    save: "conv2d_4_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP10,
+  },
+  {
+    name: "restore-vl-p11",
+    textures: { 0: "conv2d_4_tf", 10: "conv2d_4_tf", 11: "conv2d_4_tf1" },
+    when: restoreVL.whenP11,
+    save: "conv2d_5_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP11,
+  },
+  {
+    name: "restore-vl-p12",
+    textures: { 0: "conv2d_4_tf", 10: "conv2d_4_tf", 11: "conv2d_4_tf1" },
+    when: restoreVL.whenP12,
+    save: "conv2d_5_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP12,
+  },
+  {
+    name: "restore-vl-p13",
+    textures: { 0: "conv2d_5_tf", 12: "conv2d_5_tf", 13: "conv2d_5_tf1" },
+    when: restoreVL.whenP13,
+    save: "conv2d_6_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP13,
+  },
+  {
+    name: "restore-vl-p14",
+    textures: { 0: "conv2d_5_tf", 12: "conv2d_5_tf", 13: "conv2d_5_tf1" },
+    when: restoreVL.whenP14,
+    save: "conv2d_6_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP14,
+  },
+  {
+    name: "restore-vl-p15",
+    textures: { 0: "conv2d_6_tf", 14: "conv2d_6_tf", 15: "conv2d_6_tf1" },
+    when: restoreVL.whenP15,
+    save: "conv2d_7_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP15,
+  },
+  {
+    name: "restore-vl-p16",
+    textures: { 0: "conv2d_6_tf", 14: "conv2d_6_tf", 15: "conv2d_6_tf1" },
+    when: restoreVL.whenP16,
+    save: "conv2d_7_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: restoreVL.fragP16,
+  },
+  {
+    name: "restore-vl-p17",
+    textures: {
+      0: "MAIN",
+      4: "conv2d_1_tf",
+      5: "conv2d_1_tf1",
+      6: "conv2d_2_tf",
+      7: "conv2d_2_tf1",
+      8: "conv2d_3_tf",
+      9: "conv2d_3_tf1",
+      10: "conv2d_4_tf",
+      11: "conv2d_4_tf1",
+      12: "conv2d_5_tf",
+      13: "conv2d_5_tf1",
+      14: "conv2d_6_tf",
+      15: "conv2d_6_tf1",
+      16: "conv2d_7_tf",
+      17: "conv2d_7_tf1",
+    },
+    when: restoreVL.whenP17,
+    save: "MAIN",
+    size: { from: "conv2d_1_tf", scale: 1 },
+    shader: restoreVL.fragP17,
+  },
+  {
+    name: "upscale-vl-p1",
+    textures: { 0: "MAIN" },
+    when: upscaleX2VL.whenP1,
+    save: "conv2d_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP1,
+  },
+  {
+    name: "upscale-vl-p2",
+    textures: { 0: "MAIN" },
+    when: upscaleX2VL.whenP2,
+    save: "conv2d_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP2,
+  },
+  {
+    name: "upscale-vl-p3",
+    textures: { 0: "conv2d_tf", 2: "conv2d_tf", 3: "conv2d_tf1" },
+    when: upscaleX2VL.whenP3,
+    save: "conv2d_1_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP3,
+  },
+  {
+    name: "upscale-vl-p4",
+    textures: { 0: "conv2d_tf", 2: "conv2d_tf", 3: "conv2d_tf1" },
+    when: upscaleX2VL.whenP4,
+    save: "conv2d_1_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP4,
+  },
+  {
+    name: "upscale-vl-p5",
+    textures: { 0: "conv2d_1_tf", 4: "conv2d_1_tf", 5: "conv2d_1_tf1" },
+    when: upscaleX2VL.whenP5,
+    save: "conv2d_2_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP5,
+  },
+  {
+    name: "upscale-vl-p6",
+    textures: { 0: "conv2d_1_tf", 4: "conv2d_1_tf", 5: "conv2d_1_tf1" },
+    when: upscaleX2VL.whenP6,
+    save: "conv2d_2_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP6,
+  },
+  {
+    name: "upscale-vl-p7",
+    textures: { 0: "conv2d_2_tf", 6: "conv2d_2_tf", 7: "conv2d_2_tf1" },
+    when: upscaleX2VL.whenP7,
+    save: "conv2d_3_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP7,
+  },
+  {
+    name: "upscale-vl-p8",
+    textures: { 0: "conv2d_2_tf", 6: "conv2d_2_tf", 7: "conv2d_2_tf1" },
+    when: upscaleX2VL.whenP8,
+    save: "conv2d_3_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP8,
+  },
+  {
+    name: "upscale-vl-p9",
+    textures: { 0: "conv2d_3_tf", 8: "conv2d_3_tf", 9: "conv2d_3_tf1" },
+    when: upscaleX2VL.whenP9,
+    save: "conv2d_4_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP9,
+  },
+  {
+    name: "upscale-vl-p10",
+    textures: { 0: "conv2d_3_tf", 8: "conv2d_3_tf", 9: "conv2d_3_tf1" },
+    when: upscaleX2VL.whenP10,
+    save: "conv2d_4_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP10,
+  },
+  {
+    name: "upscale-vl-p11",
+    textures: { 0: "conv2d_4_tf", 10: "conv2d_4_tf", 11: "conv2d_4_tf1" },
+    when: upscaleX2VL.whenP11,
+    save: "conv2d_5_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP11,
+  },
+  {
+    name: "upscale-vl-p12",
+    textures: { 0: "conv2d_4_tf", 10: "conv2d_4_tf", 11: "conv2d_4_tf1" },
+    when: upscaleX2VL.whenP12,
+    save: "conv2d_5_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP12,
+  },
+  {
+    name: "upscale-vl-p13",
+    textures: { 0: "conv2d_5_tf", 12: "conv2d_5_tf", 13: "conv2d_5_tf1" },
+    when: upscaleX2VL.whenP13,
+    save: "conv2d_6_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP13,
+  },
+  {
+    name: "upscale-vl-p14",
+    textures: { 0: "conv2d_5_tf", 12: "conv2d_5_tf", 13: "conv2d_5_tf1" },
+    when: upscaleX2VL.whenP14,
+    save: "conv2d_6_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP14,
+  },
+  {
+    name: "upscale-vl-p15",
+    textures: {
+      0: "conv2d_tf",
+      2: "conv2d_tf",
+      3: "conv2d_tf1",
+      4: "conv2d_1_tf",
+      5: "conv2d_1_tf1",
+      6: "conv2d_2_tf",
+      7: "conv2d_2_tf1",
+      8: "conv2d_3_tf",
+      9: "conv2d_3_tf1",
+      10: "conv2d_4_tf",
+      11: "conv2d_4_tf1",
+      12: "conv2d_5_tf",
+      13: "conv2d_5_tf1",
+      14: "conv2d_6_tf",
+      15: "conv2d_6_tf1",
+    },
+    when: upscaleX2VL.whenP15,
+    save: "conv2d_last_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP15,
+  },
+  {
+    name: "upscale-vl-p16",
+    textures: {
+      0: "conv2d_tf",
+      2: "conv2d_tf",
+      3: "conv2d_tf1",
+      4: "conv2d_1_tf",
+      5: "conv2d_1_tf1",
+      6: "conv2d_2_tf",
+      7: "conv2d_2_tf1",
+      8: "conv2d_3_tf",
+      9: "conv2d_3_tf1",
+      10: "conv2d_4_tf",
+      11: "conv2d_4_tf1",
+      12: "conv2d_5_tf",
+      13: "conv2d_5_tf1",
+      14: "conv2d_6_tf",
+      15: "conv2d_6_tf1",
+    },
+    when: upscaleX2VL.whenP16,
+    save: "conv2d_last_tf1",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP16,
+  },
+  {
+    name: "upscale-vl-p17",
+    textures: {
+      0: "conv2d_tf",
+      2: "conv2d_tf",
+      3: "conv2d_tf1",
+      4: "conv2d_1_tf",
+      5: "conv2d_1_tf1",
+      6: "conv2d_2_tf",
+      7: "conv2d_2_tf1",
+      8: "conv2d_3_tf",
+      9: "conv2d_3_tf1",
+      10: "conv2d_4_tf",
+      11: "conv2d_4_tf1",
+      12: "conv2d_5_tf",
+      13: "conv2d_5_tf1",
+      14: "conv2d_6_tf",
+      15: "conv2d_6_tf1",
+    },
+    when: upscaleX2VL.whenP17,
+    save: "conv2d_last_tf2",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2VL.fragP17,
+  },
+  {
+    name: "upscale-vl-f",
+    textures: { 0: "MAIN", 16: "conv2d_last_tf", 17: "conv2d_last_tf1", 18: "conv2d_last_tf2" },
+    when: upscaleX2VL.whenF,
+    save: "MAIN",
+    size: { from: "conv2d_last_tf", scale: 2 },
+    shader: upscaleX2VL.fragF,
+  },
+  {
+    name: "auto-downscale-pre-x2",
+    textures: { 0: "MAIN" },
+    when: autoDownscalePreX2.whenF,
+    save: "MAIN",
+    size: { from: "OUTPUT", scale: 1 },
+    shader: autoDownscalePreX2.fragF,
+  },
+  {
+    name: "auto-downscale-pre-x4",
+    textures: { 0: "MAIN" },
+    when: autoDownscalePreX4.whenF,
+    save: "MAIN",
+    size: { from: "OUTPUT", scale: 0.5 },
+    shader: autoDownscalePreX4.fragF,
+  },
+  {
+    name: "upscale-m-p1",
+    textures: { 0: "MAIN" },
+    when: upscaleX2M.whenP1,
+    save: "conv2d_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2M.fragP1,
+  },
+  {
+    name: "upscale-m-p2",
+    textures: { 0: "conv2d_tf", 2: "conv2d_tf" },
+    when: upscaleX2M.whenP2,
+    save: "conv2d_1_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2M.fragP2,
+  },
+  {
+    name: "upscale-m-p3",
+    textures: { 0: "conv2d_1_tf", 3: "conv2d_1_tf" },
+    when: upscaleX2M.whenP3,
+    save: "conv2d_2_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2M.fragP3,
+  },
+  {
+    name: "upscale-m-p4",
+    textures: { 0: "conv2d_2_tf", 4: "conv2d_2_tf" },
+    when: upscaleX2M.whenP4,
+    save: "conv2d_3_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2M.fragP4,
+  },
+  {
+    name: "upscale-m-p5",
+    textures: { 0: "conv2d_3_tf", 5: "conv2d_3_tf" },
+    when: upscaleX2M.whenP5,
+    save: "conv2d_4_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2M.fragP5,
+  },
+  {
+    name: "upscale-m-p6",
+    textures: { 0: "conv2d_4_tf", 6: "conv2d_4_tf" },
+    when: upscaleX2M.whenP6,
+    save: "conv2d_5_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2M.fragP6,
+  },
+  {
+    name: "upscale-m-p7",
+    textures: { 0: "conv2d_5_tf", 7: "conv2d_5_tf" },
+    when: upscaleX2M.whenP7,
+    save: "conv2d_6_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2M.fragP7,
+  },
+  {
+    name: "upscale-m-p8",
+    textures: {
+      0: "conv2d_tf",
+      2: "conv2d_tf",
+      3: "conv2d_1_tf",
+      4: "conv2d_2_tf",
+      5: "conv2d_3_tf",
+      6: "conv2d_4_tf",
+      7: "conv2d_5_tf",
+      8: "conv2d_6_tf",
+    },
+    when: upscaleX2M.whenP8,
+    save: "conv2d_last_tf",
+    size: { from: "FRAME", scale: 1 },
+    shader: upscaleX2M.fragP8,
+  },
+  {
+    name: "upscale-m-f",
+    textures: { 0: "MAIN", 9: "conv2d_last_tf" },
+    when: upscaleX2M.whenF,
+    save: "MAIN",
+    size: { from: "conv2d_last_tf", scale: 2 },
+    shader: upscaleX2M.fragF,
+  },
+  {
+    name: "clamp-p3",
+    textures: { 0: "MAIN", 2: "STATSMAX" },
+    when: clamp.whenP3,
+    save: "MAIN",
+    size: { from: "FRAME", scale: 1 },
+    shader: clamp.fragP3,
+  },
+];
+
+const defaultVertexShader = `
+struct VertexOutput {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+};
 
 @vertex
-fn v(@builtin(vertex_index) vertexIndex: u32) -> VSOut {
-  let pos = array(
-    vec2f(-1, 1),
-    vec2f(4, 1),
-    vec2f(-1, -4),
+fn vertex(@builtin(vertex_index) i: u32) -> VertexOutput {
+  var pos = array<vec2f, 3>(
+    vec2f(-1.0, -1.0),
+    vec2f( 3.0, -1.0),
+    vec2f(-1.0,  3.0)
   );
-  var out: VSOut;
-  out.pos = vec4f(pos[vertexIndex], 0, 1);
-  return out;
+
+  var output: VertexOutput;
+  output.position = vec4f(pos[i], 0.0, 1.0);
+  output.uv = pos[i] * vec2f(0.5, -0.5) + vec2f(0.5);
+  return output;
 }
 `;
 
-const presentFragmentShader = /* wgsl */ `
-@group(0) @binding(0) var src: texture_2d<f32>;
-@group(0) @binding(1) var srcSampler: sampler;
+const defaultFragmentShader = `
+@group(0) @binding(0) var final_texture: texture_2d<f32>;
+@group(0) @binding(1) var final_sampler: sampler;
 
 @fragment
-fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
-  let dims = vec2f(textureDimensions(src));
-  let uv = pos.xy / dims;
-  let color = textureSampleLevel(src, srcSampler, uv, 0.0);
-  return vec4f(color.rgb, 1.0);
+fn fragment(@location(0) uv: vec2f) -> @location(0) vec4f {
+  return textureSampleLevel(final_texture, final_sampler, uv, 0.0);
 }
 `;
+
+function createOutputTexture(size: Size): Texture {
+  return {
+    gpu: device.createTexture({
+      size,
+      format: "rgba16float",
+      usage:
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.RENDER_ATTACHMENT,
+    }),
+    ...size,
+  };
+}
+
+function createPipeline(
+  fragmentShaderCode: string,
+  format: GPUTextureFormat,
+  bindGroupLayout?: GPUBindGroupLayout,
+) {
+  return device.createRenderPipeline({
+    layout: bindGroupLayout
+      ? device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] })
+      : "auto",
+    vertex: {
+      module: device.createShaderModule({
+        code: defaultVertexShader,
+      }),
+    },
+    fragment: {
+      module: device.createShaderModule({
+        code: fragmentShaderCode,
+      }),
+      targets: [{ format }],
+    },
+  });
+}
+
+function createBindGroupLayout(textureBindings: number[]): GPUBindGroupLayout {
+  const entries: GPUBindGroupLayoutEntry[] = [
+    {
+      binding: 1,
+      visibility: GPUShaderStage.FRAGMENT,
+      sampler: { type: "filtering" },
+    },
+  ];
+
+  for (const binding of textureBindings) {
+    entries.push({
+      binding,
+      visibility: GPUShaderStage.FRAGMENT,
+      texture: { sampleType: "float" },
+    });
+  }
+
+  return device.createBindGroupLayout({ entries });
+}
+
+function render(pipeline: GPURenderPipeline, bindGroup: GPUBindGroup, target: GPUTextureView) {
+  const encoder = device.createCommandEncoder();
+  const renderPass = encoder.beginRenderPass({
+    colorAttachments: [
+      {
+        view: target,
+        loadOp: "clear",
+        storeOp: "store",
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
+      },
+    ],
+  });
+
+  renderPass.setPipeline(pipeline);
+  renderPass.setBindGroup(0, bindGroup);
+  renderPass.draw(3);
+  renderPass.end();
+
+  device.queue.submit([encoder.finish()]);
+}
 
 function getElementById<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -51,748 +828,48 @@ function on(id: string, eventName: string, handler: (event: Event) => void): voi
   getElementById<HTMLElement>(id).addEventListener(eventName, handler);
 }
 
-const original = getElementById<HTMLImageElement>("original");
-const comparison = getElementById<HTMLElement>("comparison");
-const qualityMeta = getElementById<HTMLElement>("qualityMeta");
-const processBtn = getElementById<HTMLButtonElement>("processBtn");
-const benchmarkBtn = getElementById<HTMLButtonElement>("benchmarkBtn");
-const saveBtn = getElementById<HTMLButtonElement>("saveBtn");
-
-qualityMeta.textContent = "No run yet.";
-
-const BENCHMARK_WARMUP_FRAMES = 40;
-const BENCHMARK_SAMPLE_FRAMES = 180;
-const FPS_24_FRAME_BUDGET_MS = 1000 / 24;
-const FPS_60_FRAME_BUDGET_MS = 1000 / 60;
-const DEFAULT_COMPARE_SPLIT = 0.5;
-
-interface SavedOutput {
-  device: GPUDevice;
-  texture: GPUTexture;
-  sampler: GPUSampler;
-  width: number;
-  height: number;
-  sourceName: string;
-}
-
-interface UpscaleRuntime {
-  inputWidth: number;
-  inputHeight: number;
-  device: GPUDevice;
-  inputTexture: GPUTexture;
-  inputBitmap: ImageBitmap;
-  stageChain: PipelineStage[];
-  finalTexture: GPUTexture;
-  frameSampler: GPUSampler;
-  context: GPUCanvasContext;
-  presentPipeline: GPURenderPipeline;
-  presentBindGroup: GPUBindGroup;
-}
-
-interface BenchmarkSummary {
-  avgMs: number;
-  p50Ms: number;
-  p95Ms: number;
-  p99Ms: number;
-}
-
-interface ThroughputSummary {
-  avgMs: number;
-  fps: number;
-}
-
-function toFixed(value: number, digits = 2): string {
-  if (!Number.isFinite(value)) {
-    return "inf";
-  }
-  return value.toFixed(digits);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
-
-let selectedFile: File | null = null;
-let hasOutput = false;
-let savedOutput: SavedOutput | null = null;
-
-function sourceNameFromFile(file: File | null): string {
-  return file?.name.replace(/\.[^/.]+$/, "") ?? "image";
-}
-
 function setButtonsIdleState(): void {
   processBtn.disabled = false;
   benchmarkBtn.disabled = selectedFile === null;
-  saveBtn.disabled = !hasOutput;
-}
-
-function setComparisonSplit(split: number): void {
-  comparison.style.setProperty("--compare-split", `${clamp(split, 0, 1) * 100}%`);
-}
-
-function syncComparisonViewport(width: number, height: number): void {
-  if (width <= 0 || height <= 0) {
-    return;
-  }
-
-  comparison.style.aspectRatio = `${width} / ${height}`;
-}
-
-function resetComparisonViewport(): void {
-  comparison.style.removeProperty("aspect-ratio");
-  setComparisonSplit(DEFAULT_COMPARE_SPLIT);
-}
-
-function clearOutputPreview(): void {
-  const canvas = getElementById<HTMLCanvasElement>("canvas");
-  canvas.width = 0;
-  canvas.height = 0;
-}
-
-function updateComparisonSplitFromPointer(clientX: number): void {
-  const rect = comparison.getBoundingClientRect();
-  if (rect.width === 0) {
-    return;
-  }
-
-  setComparisonSplit((clientX - rect.left) / rect.width);
-}
-
-function beginComparisonDrag(event: PointerEvent): void {
-  if (event.button !== 0 && event.pointerType === "mouse") {
-    return;
-  }
-
-  event.preventDefault();
-  updateComparisonSplitFromPointer(event.clientX);
-  comparison.setPointerCapture(event.pointerId);
-}
-
-function moveComparisonDrag(event: PointerEvent): void {
-  if (!comparison.hasPointerCapture(event.pointerId)) {
-    return;
-  }
-
-  updateComparisonSplitFromPointer(event.clientX);
-}
-
-function endComparisonDrag(event: PointerEvent): void {
-  if (comparison.hasPointerCapture(event.pointerId)) {
-    comparison.releasePointerCapture(event.pointerId);
-  }
-}
-
-function ensureWebGpuAvailable(): void {
-  if (!("gpu" in navigator)) {
-    throw new Error("WebGPU not supported in this browser.");
-  }
-}
-
-function encodeUpscalePasses(encoder: GPUCommandEncoder, stageChain: PipelineStage[]): void {
-  for (const stage of stageChain) {
-    stage.encode(encoder);
-  }
-}
-
-function encodePresentPass(encoder: GPUCommandEncoder, runtime: UpscaleRuntime): void {
-  const presentPass = encoder.beginRenderPass({
-    colorAttachments: [
-      {
-        view: runtime.context.getCurrentTexture().createView(),
-        loadOp: "clear",
-        storeOp: "store",
-      },
-    ],
-  });
-  presentPass.setPipeline(runtime.presentPipeline);
-  presentPass.setBindGroup(0, runtime.presentBindGroup);
-  presentPass.draw(3);
-  presentPass.end();
-}
-
-function percentile(sortedValues: number[], p: number): number {
-  if (sortedValues.length === 0) {
-    return Number.NaN;
-  }
-
-  const index = (sortedValues.length - 1) * p;
-  const lo = Math.floor(index);
-  const hi = Math.ceil(index);
-  if (lo === hi) {
-    return sortedValues[lo]!;
-  }
-
-  const weight = index - lo;
-  return sortedValues[lo]! * (1 - weight) + sortedValues[hi]! * weight;
-}
-
-function summarizeBenchmarkSamples(samples: number[]): BenchmarkSummary {
-  if (samples.length === 0) {
-    throw new Error("No benchmark samples were recorded.");
-  }
-
-  const sorted = [...samples].sort((a, b) => a - b);
-  const avgMs = samples.reduce((sum, value) => sum + value, 0) / samples.length;
-  return {
-    avgMs,
-    p50Ms: percentile(sorted, 0.5),
-    p95Ms: percentile(sorted, 0.95),
-    p99Ms: percentile(sorted, 0.99),
-  };
-}
-
-function formatBenchmarkSummary(label: string, summary: BenchmarkSummary): string {
-  const avgFps = summary.avgMs > 0 ? 1000 / summary.avgMs : Number.POSITIVE_INFINITY;
-  return (
-    `${label}: avg ${toFixed(summary.avgMs, 2)} ms (${toFixed(avgFps, 1)} fps), ` +
-    `p50 ${toFixed(summary.p50Ms, 2)} ms, ` +
-    `p95 ${toFixed(summary.p95Ms, 2)} ms, ` +
-    `p99 ${toFixed(summary.p99Ms, 2)} ms`
-  );
-}
-
-function formatThroughputSummary(label: string, summary: ThroughputSummary): string {
-  return (
-    `${label}: avg ${toFixed(summary.avgMs, 2)} ms ` + `(${toFixed(summary.fps, 1)} fps sustained)`
-  );
-}
-
-function benchmarkBudgetVerdict(label: string, avgMs: number): string {
-  const fps24Verdict = avgMs <= FPS_24_FRAME_BUDGET_MS ? "PASS" : "FAIL";
-  const fps60Verdict = avgMs <= FPS_60_FRAME_BUDGET_MS ? "PASS" : "FAIL";
-  return `${label}: 24fps ${fps24Verdict}, 60fps ${fps60Verdict}`;
-}
-
-function uploadRuntimeInputFrame(runtime: UpscaleRuntime): void {
-  runtime.device.queue.copyExternalImageToTexture(
-    { source: runtime.inputBitmap, flipY: false },
-    { texture: runtime.inputTexture },
-    { width: runtime.inputWidth, height: runtime.inputHeight },
-  );
-}
-
-async function createUpscaleRuntime(file: File): Promise<UpscaleRuntime> {
-  ensureWebGpuAvailable();
-
-  const adapter = await navigator.gpu.requestAdapter({
-    powerPreference: "high-performance",
-  });
-  if (!adapter) {
-    throw new Error("No GPU adapter found.");
-  }
-
-  const device = await adapter.requestDevice();
-  const format = navigator.gpu.getPreferredCanvasFormat();
-  const bitmap = await createImageBitmap(file, {
-    colorSpaceConversion: "none",
-  });
-  const inputWidth = bitmap.width;
-  const inputHeight = bitmap.height;
-
-  const inputTexture = device.createTexture({
-    label: "initial frame texture",
-    format: "rgba8unorm",
-    size: [inputWidth, inputHeight],
-    usage:
-      GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.COPY_DST |
-      GPUTextureUsage.RENDER_ATTACHMENT,
-  });
-  device.queue.copyExternalImageToTexture(
-    { source: bitmap, flipY: false },
-    { texture: inputTexture },
-    { width: inputWidth, height: inputHeight },
-  );
-
-  const frameSampler = device.createSampler({
-    addressModeU: "clamp-to-edge",
-    addressModeV: "clamp-to-edge",
-  });
-
-  const targetOutputWidth = inputWidth * 2;
-  const targetOutputHeight = inputHeight * 2;
-  const whenReference = {
-    native: { w: inputWidth, h: inputHeight },
-    output: { w: targetOutputWidth, h: targetOutputHeight },
-  };
-
-  const stage1 = setupStage1(device, inputTexture, frameSampler);
-  const stage2 = setupStage2(device, stage1.outputTexture, frameSampler);
-  const stage3 = setupStage3(device, stage2.outputTexture, frameSampler, whenReference);
-  const stage4 = setupStage4(device, stage3.outputTexture, frameSampler, whenReference);
-  const stage5 = setupStage5(device, stage4.outputTexture, frameSampler, whenReference);
-  const stage6 = setupStage6(device, stage5.outputTexture, frameSampler, whenReference);
-  const stageChain = [stage1, stage2, stage3, stage4, stage5, stage6];
-  const finalTexture = stage6.outputTexture;
-
-  const canvas = getElementById<HTMLCanvasElement>("canvas");
-  canvas.width = finalTexture.width;
-  canvas.height = finalTexture.height;
-  syncComparisonViewport(inputWidth, inputHeight);
-
-  const context = canvas.getContext("webgpu");
-  if (!context) {
-    throw new Error("Unable to acquire webgpu context.");
-  }
-  context.configure({ device, format });
-
-  const presentBindGroupLayout = device.createBindGroupLayout({
-    entries: [
-      {
-        binding: 0,
-        visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: "unfilterable-float" },
-      },
-      {
-        binding: 1,
-        visibility: GPUShaderStage.FRAGMENT,
-        sampler: { type: "non-filtering" },
-      },
-    ],
-  });
-  const presentPipelineLayout = device.createPipelineLayout({
-    bindGroupLayouts: [presentBindGroupLayout],
-  });
-  const presentPipeline = device.createRenderPipeline({
-    label: "present final texture",
-    layout: presentPipelineLayout,
-    vertex: {
-      module: device.createShaderModule({
-        label: "present vertex shader",
-        code: presentVertexShader,
-      }),
-      entryPoint: "v",
-    },
-    fragment: {
-      module: device.createShaderModule({
-        label: "present fragment shader",
-        code: presentFragmentShader,
-      }),
-      entryPoint: "f",
-      targets: [{ format }],
-    },
-  });
-  const presentBindGroup = device.createBindGroup({
-    label: "present bind group",
-    layout: presentBindGroupLayout,
-    entries: [
-      {
-        binding: 0,
-        resource: finalTexture.createView(),
-      },
-      {
-        binding: 1,
-        resource: frameSampler,
-      },
-    ],
-  });
-
-  return {
-    inputWidth,
-    inputHeight,
-    device,
-    inputTexture,
-    inputBitmap: bitmap,
-    stageChain,
-    finalTexture,
-    frameSampler,
-    context,
-    presentPipeline,
-    presentBindGroup,
-  };
-}
-
-async function benchmarkRuntime(
-  runtime: UpscaleRuntime,
-  includePresentPass: boolean,
-  includeFrameUpload: boolean,
-  warmupFrames: number,
-  sampleFrames: number,
-): Promise<number[]> {
-  const samples: number[] = [];
-  const totalFrames = warmupFrames + sampleFrames;
-
-  for (let frame = 0; frame < totalFrames; frame += 1) {
-    const start = performance.now();
-    if (includeFrameUpload) {
-      uploadRuntimeInputFrame(runtime);
-    }
-    const encoder = runtime.device.createCommandEncoder({
-      label: includePresentPass ? "benchmark end-to-end frame" : "benchmark core frame",
-    });
-    encodeUpscalePasses(encoder, runtime.stageChain);
-    if (includePresentPass) {
-      encodePresentPass(encoder, runtime);
-    }
-    runtime.device.queue.submit([encoder.finish()]);
-    await runtime.device.queue.onSubmittedWorkDone();
-    const elapsed = performance.now() - start;
-    if (frame >= warmupFrames) {
-      samples.push(elapsed);
-    }
-  }
-
-  return samples;
-}
-
-async function benchmarkRuntimeThroughput(
-  runtime: UpscaleRuntime,
-  includePresentPass: boolean,
-  includeFrameUpload: boolean,
-  warmupFrames: number,
-  sampleFrames: number,
-): Promise<ThroughputSummary> {
-  if (sampleFrames <= 0) {
-    throw new Error("Sample frame count must be greater than 0.");
-  }
-
-  for (let frame = 0; frame < warmupFrames; frame += 1) {
-    if (includeFrameUpload) {
-      uploadRuntimeInputFrame(runtime);
-    }
-    const encoder = runtime.device.createCommandEncoder({
-      label: includePresentPass
-        ? "benchmark throughput warmup end-to-end frame"
-        : "benchmark throughput warmup core frame",
-    });
-    encodeUpscalePasses(encoder, runtime.stageChain);
-    if (includePresentPass) {
-      encodePresentPass(encoder, runtime);
-    }
-    runtime.device.queue.submit([encoder.finish()]);
-  }
-  await runtime.device.queue.onSubmittedWorkDone();
-
-  const start = performance.now();
-  for (let frame = 0; frame < sampleFrames; frame += 1) {
-    if (includeFrameUpload) {
-      uploadRuntimeInputFrame(runtime);
-    }
-    const encoder = runtime.device.createCommandEncoder({
-      label: includePresentPass
-        ? "benchmark throughput end-to-end frame"
-        : "benchmark throughput core frame",
-    });
-    encodeUpscalePasses(encoder, runtime.stageChain);
-    if (includePresentPass) {
-      encodePresentPass(encoder, runtime);
-    }
-    runtime.device.queue.submit([encoder.finish()]);
-  }
-  await runtime.device.queue.onSubmittedWorkDone();
-  const elapsed = performance.now() - start;
-  const avgMs = elapsed / sampleFrames;
-  const fps = (sampleFrames * 1000) / elapsed;
-  return { avgMs, fps };
-}
-
-async function exportSavedOutputToBlob(output: SavedOutput): Promise<Blob> {
-  const { device, texture, sampler, width, height } = output;
-
-  const exportTexture = device.createTexture({
-    label: "export texture rgba16float",
-    format: "rgba16float",
-    size: [width, height],
-    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-  });
-
-  const bindGroupLayout = device.createBindGroupLayout({
-    entries: [
-      {
-        binding: 0,
-        visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: "unfilterable-float" },
-      },
-      {
-        binding: 1,
-        visibility: GPUShaderStage.FRAGMENT,
-        sampler: { type: "non-filtering" },
-      },
-    ],
-  });
-  const pipelineLayout = device.createPipelineLayout({
-    bindGroupLayouts: [bindGroupLayout],
-  });
-  const pipeline = device.createRenderPipeline({
-    label: "export texture pipeline",
-    layout: pipelineLayout,
-    vertex: {
-      module: device.createShaderModule({
-        label: "export vertex shader",
-        code: presentVertexShader,
-      }),
-      entryPoint: "v",
-    },
-    fragment: {
-      module: device.createShaderModule({
-        label: "export fragment shader",
-        code: presentFragmentShader,
-      }),
-      entryPoint: "f",
-      targets: [{ format: "rgba16float" }],
-    },
-  });
-  const bindGroup = device.createBindGroup({
-    label: "export bind group",
-    layout: bindGroupLayout,
-    entries: [
-      { binding: 0, resource: texture.createView() },
-      { binding: 1, resource: sampler },
-    ],
-  });
-
-  const bytesPerPixel = 8;
-  const unpaddedBytesPerRow = width * bytesPerPixel;
-  const paddedBytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
-  const readbackSize = paddedBytesPerRow * height;
-
-  const readbackBuffer = device.createBuffer({
-    label: "export readback buffer",
-    size: readbackSize,
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-  });
-
-  const encoder = device.createCommandEncoder({ label: "export encoder" });
-
-  const pass = encoder.beginRenderPass({
-    colorAttachments: [
-      {
-        view: exportTexture.createView(),
-        loadOp: "clear",
-        storeOp: "store",
-      },
-    ],
-  });
-  pass.setPipeline(pipeline);
-  pass.setBindGroup(0, bindGroup);
-  pass.draw(3);
-  pass.end();
-
-  encoder.copyTextureToBuffer(
-    { texture: exportTexture },
-    {
-      buffer: readbackBuffer,
-      bytesPerRow: paddedBytesPerRow,
-      rowsPerImage: height,
-    },
-    { width, height, depthOrArrayLayers: 1 },
-  );
-
-  device.queue.submit([encoder.finish()]);
-  await device.queue.onSubmittedWorkDone();
-
-  await readbackBuffer.mapAsync(GPUMapMode.READ);
-  const mapped = new Uint16Array(readbackBuffer.getMappedRange());
-  const paddedWordsPerRow = paddedBytesPerRow / 2;
-  const unpaddedWordsPerRow = unpaddedBytesPerRow / 2;
-  const packedHalfFloat = new Uint16Array(unpaddedWordsPerRow * height);
-
-  for (let y = 0; y < height; y += 1) {
-    const srcOffset = y * paddedWordsPerRow;
-    const dstOffset = y * unpaddedWordsPerRow;
-    packedHalfFloat.set(mapped.subarray(srcOffset, srcOffset + unpaddedWordsPerRow), dstOffset);
-  }
-
-  readbackBuffer.unmap();
-  readbackBuffer.destroy();
-  exportTexture.destroy();
-  const png16Rgba = convertRgba16FloatBitsToUint16(packedHalfFloat);
-  return encodeRgba16Png(width, height, png16Rgba);
-}
-
-on("inputImg", "change", (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLInputElement)) {
-    return;
-  }
-
-  const file = target.files?.[0] ?? null;
-  if (!file) {
-    selectedFile = null;
-    hasOutput = false;
-    savedOutput = null;
-    clearOutputPreview();
-    original.removeAttribute("src");
-    resetComparisonViewport();
-    qualityMeta.textContent = "No run yet.";
-    setButtonsIdleState();
-    return;
-  }
-
-  selectedFile = file;
-  hasOutput = false;
-  savedOutput = null;
-  original.removeAttribute("src");
-  clearOutputPreview();
-  resetComparisonViewport();
-  setButtonsIdleState();
-  const reader = new FileReader();
-
-  reader.onload = (loadEvent) => {
-    const result = loadEvent.target?.result;
-    if (typeof result !== "string") {
-      return;
-    }
-
-    original.setAttribute("src", result);
-  };
-
-  reader.readAsDataURL(file);
-});
-
-original.addEventListener("load", () => {
-  syncComparisonViewport(original.naturalWidth, original.naturalHeight);
-});
-
-comparison.addEventListener("pointerdown", beginComparisonDrag);
-comparison.addEventListener("pointermove", moveComparisonDrag);
-comparison.addEventListener("pointerup", endComparisonDrag);
-comparison.addEventListener("pointercancel", endComparisonDrag);
-
-resetComparisonViewport();
-
-on("saveBtn", "click", async () => {
-  const canvas = getElementById<HTMLCanvasElement>("canvas");
-  if (!hasOutput || !savedOutput || canvas.width === 0 || canvas.height === 0) {
-    qualityMeta.textContent = "Run Process before saving output.";
-    return;
-  }
-  qualityMeta.textContent = "Saving PNG...";
-
-  try {
-    const blob = await exportSavedOutputToBlob(savedOutput);
-    const fileName = `${savedOutput.sourceName}-upscaled-${savedOutput.width}x${savedOutput.height}.png`;
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = fileName;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    URL.revokeObjectURL(url);
-    qualityMeta.textContent = `Saved ${fileName}`;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    qualityMeta.textContent = `Save failed: ${message}`;
-  }
-});
-
-on("benchmarkBtn", "click", async () => {
-  const file = selectedFile;
-  if (!file) {
-    qualityMeta.textContent = "Pick an image first.";
-    return;
-  }
-
-  processBtn.disabled = true;
-  benchmarkBtn.disabled = true;
   saveBtn.disabled = true;
-  qualityMeta.textContent = "Preparing benchmark runtime...";
+}
 
-  try {
-    const runtime = await createUpscaleRuntime(file);
-    console.log("Benchmark dimensions", {
-      input: `${runtime.inputWidth}x${runtime.inputHeight}`,
-      output: `${runtime.finalTexture.width}x${runtime.finalTexture.height}`,
-      warmupFrames: BENCHMARK_WARMUP_FRAMES,
-      sampleFrames: BENCHMARK_SAMPLE_FRAMES,
-    });
+function hideBenchmarkPopup(): void {
+  benchmarkPopup.classList.add("hidden");
+}
 
-    qualityMeta.textContent = "Benchmarking core (no present)...";
-    const coreSamples = await benchmarkRuntime(
-      runtime,
-      false,
-      false,
-      BENCHMARK_WARMUP_FRAMES,
-      BENCHMARK_SAMPLE_FRAMES,
-    );
+function showBenchmarkPopup(message: string): void {
+  benchmarkMeta.textContent = message;
+  benchmarkPopup.classList.remove("hidden");
+}
 
-    qualityMeta.textContent = "Benchmarking video latency (upload + present)...";
-    const endToEndSamples = await benchmarkRuntime(
-      runtime,
-      true,
-      true,
-      BENCHMARK_WARMUP_FRAMES,
-      BENCHMARK_SAMPLE_FRAMES,
-    );
+type Size = {
+  width: number;
+  height: number;
+};
 
-    qualityMeta.textContent = "Benchmarking video throughput (upload + pipeline)...";
-    const throughputSummary = await benchmarkRuntimeThroughput(
-      runtime,
-      false,
-      true,
-      BENCHMARK_WARMUP_FRAMES,
-      BENCHMARK_SAMPLE_FRAMES,
-    );
+type Texture = Size & {
+  gpu: GPUTexture;
+};
 
-    const coreSummary = summarizeBenchmarkSamples(coreSamples);
-    const endToEndSummary = summarizeBenchmarkSamples(endToEndSamples);
-    qualityMeta.textContent = [
-      `Benchmark ${runtime.inputWidth}x${runtime.inputHeight} -> ` +
-        `${runtime.finalTexture.width}x${runtime.finalTexture.height}`,
-      `Warmup: ${BENCHMARK_WARMUP_FRAMES} frames, sample: ${BENCHMARK_SAMPLE_FRAMES} frames`,
-      formatBenchmarkSummary("Core", coreSummary),
-      formatBenchmarkSummary("Video latency (upload + present)", endToEndSummary),
-      formatThroughputSummary("Video throughput (upload + pipeline)", throughputSummary),
-      benchmarkBudgetVerdict("Video latency p95 budget", endToEndSummary.p95Ms),
-      benchmarkBudgetVerdict("Video throughput avg budget", throughputSummary.avgMs),
-    ].join("\n");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    qualityMeta.textContent = `Benchmark failed: ${message}`;
-  } finally {
-    setButtonsIdleState();
-  }
-});
+type PassSizes = {
+  main: Size;
+  native: Size;
+  output: Size;
+};
 
-on("processBtn", "click", async () => {
-  const file = selectedFile;
-  if (!file) {
-    qualityMeta.textContent = "Pick an image first.";
-    return;
-  }
+type When = (sizes: PassSizes) => boolean;
 
-  processBtn.disabled = true;
-  benchmarkBtn.disabled = true;
-  saveBtn.disabled = true;
-  hasOutput = false;
-  savedOutput = null;
-  qualityMeta.textContent = "Running pipeline...";
-
-  try {
-    const runtime = await createUpscaleRuntime(file);
-    console.log("Upscale dimensions", {
-      input: `${runtime.inputWidth}x${runtime.inputHeight}`,
-      output: `${runtime.finalTexture.width}x${runtime.finalTexture.height}`,
-    });
-
-    const pipelineStart = performance.now();
-    const encoder = runtime.device.createCommandEncoder({
-      label: "pipeline encoder",
-    });
-    encodeUpscalePasses(encoder, runtime.stageChain);
-    encodePresentPass(encoder, runtime);
-
-    runtime.device.queue.submit([encoder.finish()]);
-    await runtime.device.queue.onSubmittedWorkDone();
-    const runtimeMs = performance.now() - pipelineStart;
-
-    hasOutput = true;
-    savedOutput = {
-      device: runtime.device,
-      texture: runtime.finalTexture,
-      sampler: runtime.frameSampler,
-      width: runtime.finalTexture.width,
-      height: runtime.finalTexture.height,
-      sourceName: sourceNameFromFile(file),
-    };
-    qualityMeta.textContent =
-      `Upscale complete: ${runtime.inputWidth}x${runtime.inputHeight} -> ` +
-      `${runtime.finalTexture.width}x${runtime.finalTexture.height} in ${toFixed(runtimeMs, 1)} ms.`;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    qualityMeta.textContent = `Upscale failed: ${message}`;
-  } finally {
-    setButtonsIdleState();
-  }
-});
+type Pass = {
+  name: string;
+  when: When | null;
+  textures: {
+    [binding: number]: string;
+  };
+  save?: string | null;
+  size: {
+    from: string;
+    scale: number;
+  };
+  shader: string;
+};

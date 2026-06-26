@@ -3,7 +3,7 @@
 //!BIND HOOKED
 //!SAVE STATSMAX
 //!COMPONENTS 1
-export const whenP1: string | null = null;
+export const whenP1 = null;
 
 const fragShared = /* wgsl */ `
 @group(0) @binding(0) var frame: texture_2d<f32>;
@@ -57,7 +57,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!BIND STATSMAX
 //!SAVE STATSMAX
 //!COMPONENTS 1
-export const whenP2: string | null = null;
+export const whenP2 = null;
 
 export const fragP2 = /* wgsl */ `
 ${fragSharedStatsMax}
@@ -79,7 +79,7 @@ fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 //!HOOK PREKERNEL
 //!BIND HOOKED
 //!BIND STATSMAX
-export const whenP3: string | null = null;
+export const whenP3 = null;
 
 export const fragP3 = /* wgsl */ `
 ${fragSharedStatsMax}
@@ -88,7 +88,9 @@ ${fragSharedStatsMax}
 fn f(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let current = tex_at(frame, pos);
   let current_luma = get_luma(current);
-  let new_luma = min(current_luma, tex_at(stats_max, pos).x);
+  let frame_dims = vec2f(textureDimensions(frame));
+  let uv = pos.xy / frame_dims;
+  let new_luma = min(current_luma, textureSampleLevel(stats_max, frame_sampler, uv, 0.0).x);
   let delta = current_luma - new_luma;
 
   return current - vec4f(delta);

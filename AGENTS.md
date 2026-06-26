@@ -3,15 +3,14 @@
 ## Scope
 
 Applies to entire repo.
-If we add nested `AGENTS.md` later, deeper file wins for that subtree.
+Nested `AGENTS.md` files take precedence for their subtree.
 
-## Project Stage
+## Project Standard
 
-Early WIP.
-Current PoC complete: select image -> run full Anime4K pass chain -> get upscaled output in browser.
-Favor momentum and clear, reversible changes over heavy process.
+Senmei is built as a complete browser anime player with a hand-authored WebGPU
+Anime4K pipeline. Favor clear, reversible changes over heavy process.
 
-## Project Goal (Current)
+## Project Goal
 
 Build a browser-based anime player with real-time upscaling:
 
@@ -21,18 +20,16 @@ Build a browser-based anime player with real-time upscaling:
 
 ## Repo Map (Quick)
 
-- `main.ts`: app entry, UI wiring, GPU orchestration, benchmarking/saving output
-- `pipeline/*.ts`: per-stage pipeline setup/encode flow
-- `shaders/*.ts` and `shaders/*.wgsl`: WGSL ports and shader sources
-- `png16.ts`: 16-bit PNG encode utilities
-- `server.ts`: Bun static server + on-the-fly TS transpile for browser load
+- `main.ts`: app entry and minimal UI wiring
+- `shaders/*.ts`: WGSL ports embedded as TypeScript string exports
+- `vite.config.ts`: Vite dev/build config with Tailwind CSS plugin
 - `data/`: sample images for local testing
 - `Anime4K/`: upstream reference GLSL/docs for parity checks
 
 ## Run (Local)
 
-- Install: `bun install`
-- Start dev server: `bun run dev`
+- Install/cache deps: `deno install`
+- Start dev server: `deno task dev`
 - Open: `http://localhost:3000`
 - Browser: Chromium-based with WebGPU enabled
 
@@ -42,29 +39,30 @@ Build a browser-based anime player with real-time upscaling:
 - Match local code style and patterns in touched files.
 - Fix root cause first; avoid patching symptoms.
 - Treat error paths as first-class (not happy-path only).
-- Avoid adding dependencies unless clearly needed for current milestone.
-- Do not over-engineer for future architecture while PoC is still evolving.
+- Avoid adding dependencies unless they are clearly needed for the current task.
+- Keep architecture practical and directly tied to the player and upscaler.
 
-## Verification (Right-Sized for WIP)
+## Verification
 
 Use fast manual verification unless task needs more:
 
 - App boots at `localhost:3000`
-- Can load an image and process successfully
-- Output renders and can be saved when expected
+- Can load an image preview
+- Process button runs the WebGPU pipeline for image input
 
-If touching pipeline/shaders, also verify:
+If rebuilding pipeline/shaders, also verify:
 
 - pass order remains:
   `Clamp -> Restore_VL -> Upscale_x2_VL -> AutoDownscalePre_x2 -> AutoDownscalePre_x4 -> Upscale_x2_M`
-- stage dimensions/conditions still align with current parity plan in `README.md`
+- stage dimensions/conditions still align with the Anime4K parity plan in `README.md`
 
-## Near-Term Priorities
+## Project Priorities
 
+- Maintain the WebGPU setup and shader pipeline by hand
 - Close parity gaps vs Anime4K GLSL `Ctrl+1 (HQ)` behavior
 - Make output sizing/reactivity correct on resize/fullscreen/DPR changes
 - Keep pass activation logic faithful to GLSL semantics (`!WHEN`, `MAIN/NATIVE/OUTPUT`)
-- Expand from image PoC into full video path
+- Connect the image and video paths through the same WebGPU pipeline
 
 ## Handoff Expectations
 

@@ -5,8 +5,18 @@
 //!WHEN OUTPUT.w NATIVE.w / 2.0 < OUTPUT.h NATIVE.h / 2.0 < * OUTPUT.w NATIVE.w / 1.2 > OUTPUT.h NATIVE.h / 1.2 > * *
 //!WIDTH OUTPUT.w
 //!HEIGHT OUTPUT.h
-export const whenF =
-  "OUTPUT.w NATIVE.w / 2.0 < OUTPUT.h NATIVE.h / 2.0 < * OUTPUT.w NATIVE.w / 1.2 > OUTPUT.h NATIVE.h / 1.2 > * *";
+export const whenF: When = ({ native, output }) =>
+  output.width / native.width < 2.0 &&
+  output.height / native.height < 2.0 &&
+  output.width / native.width > 1.2 &&
+  output.height / native.height > 1.2;
+
+type Size = {
+  width: number;
+  height: number;
+};
+
+type When = (sizes: { native: Size; output: Size }) => boolean;
 
 const fragShared = /* wgsl */ `
 @group(0) @binding(0) var frame: texture_2d<f32>;

@@ -3,7 +3,7 @@
 Goal: learn parser internals by building and verifying each piece yourself.
 Rule: this guide gives checkpoints, invariants, and failure modes, not copy-paste code.
 
-## Starter Glossary (Read Once)
+## Parser Glossary
 
 - EBML: binary container format; Matroska is built on top of it.
 - Element: one unit of EBML data: `ID + Size + Data`.
@@ -50,9 +50,9 @@ Reading priority:
 - RFC 8794: sections 4, 5, 6
 - RFC 9559: sections 4.5, 5.1, 6.1, 10, 11, 16
 
-## Scope for v1 Parser
+## Parser Scope
 
-Implement only:
+Implement:
 
 - EBML Header validation
 - Segment child scanning
@@ -62,7 +62,7 @@ Implement only:
 - Cues-based seek index (required for smooth seek/scrub)
 - Subtitle extraction for plain text tracks
 
-Defer:
+Out of parser scope:
 
 - Attachments/Chapters/Tags details
 - Full Matroska schema coverage
@@ -73,10 +73,10 @@ Must support for this project:
 
 - Video: `V_MPEG4/ISO/AVC`, `V_MPEGH/ISO/HEVC`
 - Audio: `A_AAC`
-- Subtitles (text only): start with `S_TEXT/UTF8`
+- Subtitles (text only): `S_TEXT/UTF8`
 - Track selection metadata: `Name`, `Language`, `FlagDefault`, `FlagForced`
 
-Explicit v1 policy (to avoid hidden bugs):
+Explicit parser policy:
 
 - If lacing appears, either parse it for that file or fail fast with clear error
 - If Cues missing, use coarse fallback seek (scan forward to next decodable keyframe)
@@ -132,7 +132,7 @@ General form (RFC 9559 section 11.2):
 
 - `ns = ((cluster_ts + block_rel_ts * track_ts_scale) * timestamp_scale) - codec_delay`
 
-v1 simplification allowed only if you assert:
+Simplified timestamp math is allowed only if you assert:
 
 - `track_ts_scale == 1.0`
 - `codec_delay == 0`
@@ -166,9 +166,9 @@ If cursor does not align:
 - wrong marker-bit stripping
 - or off-by-one cursor update
 
-## Minimum Success Path (First Decoded Video Frame)
+## Decode Verification Path
 
-Do only these first:
+Verify these parser capabilities in order:
 
 1. Lab 1 (VINT) pass
 2. Lab 2 (element header) pass
@@ -178,11 +178,11 @@ Do only these first:
 6. Lab 7 (extract one video SimpleBlock payload)
 7. feed payload to decoder with parsed track metadata
 
-Stop here and verify first decoded frame before adding seek/lacing.
+Verify the decoded frame before validating seek and lacing behavior.
 
-## Minimum Success Path (Your Real Goal Set)
+## Playback Feature Path
 
-After first frame works, finish these in order:
+Verify these playback capabilities in order:
 
 1. Add AAC extraction path from same clusters
 2. Add `BlockGroup` handling for timing/dependency elements used in real files
@@ -243,8 +243,8 @@ Important distinction:
 
 Recommended approach for this project:
 
-- v1 parser core: use pull model with a tiny reader abstraction
-- later, if you need true live streaming, build a chunk-buffered source under that same reader API
+- parser core: use pull model with a tiny reader abstraction
+- true incremental streaming uses a chunk-buffered source under that same reader API
 
 Recommended playback-facing API shape:
 
@@ -261,7 +261,7 @@ Recommended playback-facing API shape:
   - sequential playback should reuse parser/cluster/cue context instead of recomputing from scratch
 - avoid ambiguous shapes like `frame(ms).prepare(ns)`:
   - `frame(...)` sounds like one value
-  - `prepare(...)` sounds like future range fetch
+  - `prepare(...)` sounds like range-fetch scheduling
   - one object then mixes "single sample data" with "stateful stream cursor"
 
 Practical reason:
@@ -273,10 +273,10 @@ Rule of thumb:
 - if parser code keeps asking "what if header ends in next chunk?", you are still mixing source-layer problems into parser-layer logic
 - if parser code mostly thinks in `offset -> header -> payload -> next offset`, your layering is probably right
 
-For learning:
+Implementation rule:
 
-- build parser against a file-backed/random-access reader first
-- add true incremental stream support only after first-frame extraction works
+- build parser against the file-backed/random-access reader
+- implement incremental stream support through the same reader abstraction
 
 ## Incremental Labs (Build + Verify)
 
@@ -513,7 +513,7 @@ If available, also run:
 - ignoring `BlockGroup` and then failing on files without `SimpleBlock`-only layout
 - extracting subtitles without explicit unsupported path for non-text subtitle codecs
 
-## Done Criteria for v1
+## Done Criteria
 
 - opens local MKV
 - validates EBML Header

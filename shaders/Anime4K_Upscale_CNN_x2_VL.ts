@@ -30,7 +30,16 @@ fn tex_off(tex: texture_2d<f32>, base_pos: vec4f, x_off: f32, y_off: f32) -> vec
 }
 `;
 
-const upscaleWhen = "OUTPUT.w MAIN.w / 1.200 > OUTPUT.h MAIN.h / 1.200 > *";
+const upscaleWhen: When = ({ main, output }) =>
+  output.width / main.width > 1.2 && output.height / main.height > 1.2;
+
+type Size = {
+  width: number;
+  height: number;
+};
+
+type When = (sizes: { main: Size; output: Size }) => boolean;
+
 export const whenP1 = upscaleWhen;
 export const whenP2 = upscaleWhen;
 export const whenP3 = upscaleWhen;

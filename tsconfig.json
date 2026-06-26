@@ -2,7 +2,7 @@
   "compilerOptions": {
     // Environment setup & latest features
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": ["bun", "@webgpu/types"],
+    "types": ["@webgpu/types", "vite/client"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
