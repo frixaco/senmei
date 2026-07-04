@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "deno task dev",
-    "build": "deno task build",
-    "preview": "deno task preview",
+    "dev": "vite --host 0.0.0.0 --port 3000",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint .",
@@ -13,6 +13,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.1",
+    "@types/node": "^26.1.0",
     "@webgpu/types": "^0.1.71",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",

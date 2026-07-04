@@ -28,8 +28,8 @@ Build a browser-based anime player with real-time upscaling:
 
 ## Run (Local)
 
-- Install/cache deps: `deno install`
-- Start dev server: `deno task dev`
+- Install/cache deps: `bun install`
+- Start dev server: `bun run dev`
 - Open: `http://localhost:3000`
 - Browser: Chromium-based with WebGPU enabled
 

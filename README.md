@@ -8,12 +8,20 @@
 
 ### Dependencies
 
+- [Bun](https://bun.sh/) - package manager and script runner
 - [Anime4K](https://github.com/bloc97/Anime4K) - High-End HQ Mode A preset
 - Chromium-based browser
 - [mediabunny](https://github.com/Vanilagy/mediabunny) - demuxing, seeking
 - `WebCodecs`, `AudioWorklet`, `Web Worker`
 - `WebGPU`, `WGSL/GLSL` shaders
 - [typegpu](https://github.com/software-mansion/TypeGPU) - WGSL authoring utilities
+
+### Local Development
+
+- Install deps: `bun install`
+- Start dev server: `bun run dev`
+- Build: `bun run build`
+- Preview build: `bun run preview`
 
 ### Implementation Scope
 

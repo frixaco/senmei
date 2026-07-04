@@ -1,18 +1,19 @@
 import { open } from "fs/promises";
-import { ELEMENT_INFO, LEVEL_0_AND_1_ELEMENT_IDS, type ElementName } from "./constants";
+import { ELEMENT_INFO, type ElementName } from "./constants";
 
-const filePath = "./data/fate08.mkv";
+// const filePath = "./data/fate08.mkv";
 // const filePath = "./data/hellmode07.mkv";
 // const filePath = "./data/unknown-size-segment-clusters.mkv";
+const filePath =
+  "https://rqbit.anitrack.frixaco.com/torrents/0/stream/0/[SubsPlease]%20Tensei%20Shitara%20Slime%20Datta%20Ken%20S4%20-%2013%20(1080p)%20[C3528385].mkv";
 
 async function main() {
-  const backend = await createBackend(filePath, "local");
+  const backend = await createBackend(filePath, "http");
   const reader = await createBufferedReader(backend);
   const mkv = await openMatroska(reader);
-  console.log(mkv);
+  // console.log(mkv);
 
-  const tree = await mkv.tree();
-
+  const tree = await mkv.init();
   console.log(JSON.stringify(tree, null, 2));
 }
 
@@ -21,6 +22,7 @@ type Backend = {
 };
 
 const MAX_SLOTS = 64;
+const CHUNK_SIZE = 32 * 1024;
 
 class LRU<K = number, T = Uint8Array<ArrayBuffer>> {
   map = new Map<K, T>();
@@ -62,17 +64,13 @@ async function createBackend(filePath: string, source: "local" | "http"): Promis
 
   if (source === "http") {
     async function fetchBytes(offset: number, size: number = CHUNK_SIZE) {
-      let fileSize = 1_441_987_969;
-      let end = Math.min(offset + size - 1, fileSize - 1);
-      let response = await fetch(filePath, {
+      const start = offset;
+      const end = offset + size - 1;
+      const response = await fetch(filePath, {
         headers: {
-          Range: `bytes=${offset}-${end}`,
+          Range: `bytes=${start}-${end}`,
         },
       });
-
-      if (response.status !== 206) {
-        throw new Error(`Status: ${response.status}; Message: ${response.text()}`);
-      }
 
       return new Uint8Array(await response.arrayBuffer());
     }
@@ -90,8 +88,6 @@ async function createBackend(filePath: string, source: "local" | "http"): Promis
 type BufferedReader = {
   read: (from: number, size: number) => Uint8Array | Promise<Uint8Array>;
 };
-
-const CHUNK_SIZE = 256 * 1024;
 
 async function createBufferedReader(backend: Backend): Promise<BufferedReader> {
   const cache = new LRU();
@@ -178,51 +174,67 @@ async function openMatroska(reader: BufferedReader) {
     };
   }
 
+  async function parseSizeAt(offset: number) {
+    let result = reader.read(offset, 1);
+    let firstByte = (result instanceof Uint8Array ? result : await result)[0];
+    if (firstByte === undefined) {
+      throw new Error("Unexpected EOF while reading element size");
+    }
+    let width = 1;
+    let mask = 0x80;
+    while ((firstByte & mask) === 0) {
+      width++;
+      mask >>= 1;
+      if (mask === 0) {
+        throw new Error(`Invalid element size at offset ${offset}`);
+      }
+    }
+    result = reader.read(offset, width);
+    let bytes = result instanceof Uint8Array ? result : await result;
+    if (bytes.length < width) {
+      throw new Error(`Truncated element size at offset ${offset}`);
+    }
+    let size = firstByte & (mask - 1);
+    for (let i = 1; i < width; i++) {
+      size = size * 256 + bytes[i]!;
+    }
+
+    let firstByteAllOnes = (firstByte & (mask - 1)) === mask - 1;
+    if (firstByteAllOnes && bytes.slice(1).every((b) => b === 0xff)) {
+      return {
+        width,
+        size: -1,
+      };
+    }
+
+    return {
+      width,
+      size,
+    };
+  }
+
+  async function peekElementAt(offset: number) {
+    const { id, width: idWidth } = await parseIdAt(offset);
+    const { size, width: sizeWidth } = await parseSizeAt(offset + idWidth);
+    const elementInfo = ELEMENT_INFO[id];
+    const name = elementInfo?.name ?? `UNKNOWN(0x${id.toString(16)})`;
+    const dataStart = offset + idWidth + sizeWidth;
+
+    return {
+      id,
+      name,
+      size,
+      dataStart,
+      end: size >= 0 ? dataStart + size : -1,
+    };
+  }
+
   async function parseElement(cursor: number): Promise<Element> {
-    async function parseId() {
-      const { id, width } = await parseIdAt(cursor);
-      cursor += width;
+    const { id, width } = await parseIdAt(cursor);
+    cursor += width;
 
-      return id;
-    }
-
-    async function parseSize() {
-      let result = reader.read(cursor, 1);
-      let firstByte = (result instanceof Uint8Array ? result : await result)[0];
-      if (firstByte === undefined) {
-        throw new Error("Unexpected EOF while reading element size");
-      }
-      let width = 1;
-      let mask = 0x80;
-      while ((firstByte & mask) === 0) {
-        width++;
-        mask >>= 1;
-        if (mask === 0) {
-          throw new Error(`Invalid element size at offset ${cursor}`);
-        }
-      }
-      result = reader.read(cursor, width);
-      let bytes = result instanceof Uint8Array ? result : await result;
-      if (bytes.length < width) {
-        throw new Error(`Truncated element size at offset ${cursor}`);
-      }
-      let size = firstByte & (mask - 1);
-      for (let i = 1; i < width; i++) {
-        size = size * 256 + bytes[i]!;
-      }
-
-      cursor += width;
-
-      let firstByteAllOnes = (firstByte & (mask - 1)) === mask - 1;
-      if (firstByteAllOnes && bytes.slice(1).every((b) => b === 0xff)) {
-        return -1;
-      }
-
-      return size;
-    }
-
-    const id = await parseId();
-    const size = await parseSize();
+    const { size, width: sizeWidth } = await parseSizeAt(cursor);
+    cursor += sizeWidth;
 
     const elementInfo = ELEMENT_INFO[id]!;
     const name = elementInfo?.name ?? `UNKNOWN(0x${id.toString(16)})`;
@@ -246,6 +258,19 @@ async function openMatroska(reader: BufferedReader) {
     if (size >= 0) {
       let offset = cursor;
       while (offset < cursor + size) {
+        if (name === "SEGMENT") {
+          const childHeader = await peekElementAt(offset);
+
+          if (childHeader.name === "CLUSTER") {
+            break;
+          }
+
+          if (childHeader.name === "ATTACHMENTS") {
+            offset = childHeader.end;
+            continue;
+          }
+        }
+
         const child = await parseElement(offset);
         branches.push(child);
         offset = child.end;
@@ -261,15 +286,7 @@ async function openMatroska(reader: BufferedReader) {
       let offset = cursor;
       while (true) {
         if (elementInfo.name === "CLUSTER") {
-          const { id: nextId } = await parseIdAt(offset);
-          // @ts-ignore
-          if (LEVEL_0_AND_1_ELEMENT_IDS.includes(nextId)) {
-            break;
-          }
-
-          const child = await parseElement(offset);
-          branches.push(child);
-          offset = child.end;
+          break;
         }
         if (elementInfo.name === "SEGMENT") {
           try {
@@ -295,20 +312,15 @@ async function openMatroska(reader: BufferedReader) {
     };
   }
 
-  async function getTree() {
-    const header = await parseElement(0);
-    const segment = await parseElement(header.dataStart + header.size);
-    return {
-      header,
-      segment,
-    };
-  }
-
   return {
-    tree: getTree,
-    audio: [],
-    video: [],
-    subtitles: [],
+    async init() {
+      const header = await parseElement(0);
+      const segment = await parseElement(header.dataStart + header.size);
+      return {
+        header,
+        segment,
+      };
+    },
   };
 }
 
