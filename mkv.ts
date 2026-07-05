@@ -1,5 +1,5 @@
 import { open } from "fs/promises";
-import { ELEMENT_INFO, type ElementName } from "./constants";
+import { ELEMENT_INFO, TRACK_TYPE, type ElementName } from "./constants";
 
 // const filePath = "./data/fate08.mkv";
 // const filePath = "./data/hellmode07.mkv";
@@ -10,16 +10,10 @@ const filePath =
 async function main() {
   const backend = await createBackend(filePath, "http");
   const reader = await createBufferedReader(backend);
-  const mkv = await openMatroska(reader);
+  const matroska = await openMatroska(reader);
 
-  const tree = await mkv.init();
-  console.log(
-    JSON.stringify(
-      tree.segment.branches.map((s) => s.name),
-      null,
-      2,
-    ),
-  );
+  const mkv = await matroska.init();
+  console.log(JSON.stringify(mkv, null, 2));
 }
 
 type Backend = {
@@ -134,6 +128,7 @@ type BufferedReader = {
   read: (from: number, size: number) => Uint8Array | Promise<Uint8Array>;
 };
 
+// TODO: disable prefetching for .init()
 async function createBufferedReader(backend: Backend): Promise<BufferedReader> {
   const cache = new LRU();
   const prefetched = new LRU<number, Promise<Uint8Array<ArrayBuffer>>>();
@@ -284,6 +279,30 @@ async function openMatroska(reader: BufferedReader) {
     return value;
   }
 
+  async function parseStringAt(offset: number, size: number) {
+    let result = reader.read(offset, size);
+    let bytes = result instanceof Uint8Array ? result : await result;
+    const str = new TextDecoder("utf-8").decode(bytes);
+
+    return str;
+  }
+
+  async function parseFloatAt(offset: number, size: number) {
+    let result = reader.read(offset, size);
+    let bytes = result instanceof Uint8Array ? result : await result;
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+    if (size === 4) {
+      return view.getFloat32(0, false);
+    }
+
+    if (size === 8) {
+      return view.getFloat64(0, false);
+    }
+
+    return null;
+  }
+
   async function parseElement(cursor: number): Promise<Element> {
     const { id, width } = await parseIdAt(cursor);
     cursor += width;
@@ -388,7 +407,7 @@ async function openMatroska(reader: BufferedReader) {
 
       const seekHeadChildren = segment.branches.find((s) => s.name === "SEEK_HEAD")!.branches;
 
-      const seekTargets = [];
+      let seekTargets = [];
 
       for (const el of seekHeadChildren) {
         const seekPositionElement = el.branches.find((b) => b.name === "SEEK_POSITION")!;
@@ -424,9 +443,150 @@ async function openMatroska(reader: BufferedReader) {
         segment.branches.push(element);
       }
 
+      let audios = [];
+      let videos = [];
+      let subtitles = [];
+      let audioIndex = 0;
+      let videoIndex = 0;
+      let subtitleIndex = 0;
+
+      const tracks = segment.branches.find((b) => b.name === "TRACKS")!.branches;
+
+      for (const t of tracks) {
+        const tte = t.branches.find((b) => b.name === "TRACK_TYPE")!;
+        const trackType = await parseNumberAt(tte.dataStart, tte.size);
+        const trackNumberElement = t.branches.find((b) => b.name === "TRACK_NUMBER");
+        const trackUidElement = t.branches.find((b) => b.name === "TRACK_UID");
+        const nameElement = t.branches.find((b) => b.name === "NAME");
+        const languageBcp47Element = t.branches.find((b) => b.name === "LANGUAGE_BCP47");
+        const languageElement = t.branches.find((b) => b.name === "LANGUAGE");
+        const codecIdElement = t.branches.find((b) => b.name === "CODEC_ID");
+        const enabledElement = t.branches.find((b) => b.name === "FLAG_ENABLED");
+        const defaultElement = t.branches.find((b) => b.name === "FLAG_DEFAULT");
+        const forcedElement = t.branches.find((b) => b.name === "FLAG_FORCED");
+        const name = nameElement
+          ? await parseStringAt(nameElement.dataStart, nameElement.size)
+          : null;
+        const languageBcp47 = languageBcp47Element
+          ? await parseStringAt(languageBcp47Element.dataStart, languageBcp47Element.size)
+          : null;
+        const language =
+          languageBcp47 ??
+          (languageElement
+            ? await parseStringAt(languageElement.dataStart, languageElement.size)
+            : null);
+        const usefulLanguage = language && language !== "und" ? language : null;
+        const trackNumber = trackNumberElement
+          ? await parseNumberAt(trackNumberElement.dataStart, trackNumberElement.size)
+          : 0;
+        const trackUid = trackUidElement
+          ? await parseNumberAt(trackUidElement.dataStart, trackUidElement.size)
+          : null;
+        const codecId = codecIdElement
+          ? await parseStringAt(codecIdElement.dataStart, codecIdElement.size)
+          : null;
+        const enabled = enabledElement
+          ? (await parseNumberAt(enabledElement.dataStart, enabledElement.size)) !== 0
+          : true;
+        const isDefault = defaultElement
+          ? (await parseNumberAt(defaultElement.dataStart, defaultElement.size)) !== 0
+          : false;
+        const forced = forcedElement
+          ? (await parseNumberAt(forcedElement.dataStart, forcedElement.size)) !== 0
+          : false;
+
+        if (trackType === TRACK_TYPE.VIDEO) {
+          videoIndex++;
+          const video = t.branches.find((b) => b.name === "VIDEO");
+          const pixelWidthElement = video?.branches.find((b) => b.name === "PIXEL_WIDTH");
+          const pixelHeightElement = video?.branches.find((b) => b.name === "PIXEL_HEIGHT");
+          const displayWidthElement = video?.branches.find((b) => b.name === "DISPLAY_WIDTH");
+          const displayHeightElement = video?.branches.find((b) => b.name === "DISPLAY_HEIGHT");
+          videos.push({
+            entry: t,
+            number: trackNumber,
+            uid: trackUid,
+            type: "video",
+            label: name ?? usefulLanguage ?? `Video ${videoIndex}`,
+            name,
+            language,
+            codecId,
+            enabled,
+            default: isDefault,
+            forced,
+            pixelWidth: pixelWidthElement
+              ? await parseNumberAt(pixelWidthElement.dataStart, pixelWidthElement.size)
+              : null,
+            pixelHeight: pixelHeightElement
+              ? await parseNumberAt(pixelHeightElement.dataStart, pixelHeightElement.size)
+              : null,
+            displayWidth: displayWidthElement
+              ? await parseNumberAt(displayWidthElement.dataStart, displayWidthElement.size)
+              : null,
+            displayHeight: displayHeightElement
+              ? await parseNumberAt(displayHeightElement.dataStart, displayHeightElement.size)
+              : null,
+          });
+        }
+
+        if (trackType === TRACK_TYPE.AUDIO) {
+          audioIndex++;
+          const audio = t.branches.find((b) => b.name === "AUDIO");
+          const channelsElement = audio?.branches.find((b) => b.name === "CHANNELS");
+          const samplingFrequencyElement = audio?.branches.find(
+            (b) => b.name === "SAMPLING_FREQUENCY",
+          );
+          const bitDepthElement = audio?.branches.find((b) => b.name === "BIT_DEPTH");
+          audios.push({
+            entry: t,
+            number: trackNumber,
+            uid: trackUid,
+            type: "audio",
+            label: name ?? usefulLanguage ?? `Audio ${audioIndex}`,
+            name,
+            language,
+            codecId,
+            enabled,
+            default: isDefault,
+            forced,
+            channels: channelsElement
+              ? await parseNumberAt(channelsElement.dataStart, channelsElement.size)
+              : null,
+            samplingFrequency: samplingFrequencyElement
+              ? await parseFloatAt(
+                  samplingFrequencyElement.dataStart,
+                  samplingFrequencyElement.size,
+                )
+              : null,
+            bitDepth: bitDepthElement
+              ? await parseNumberAt(bitDepthElement.dataStart, bitDepthElement.size)
+              : null,
+          });
+        }
+
+        if (trackType === TRACK_TYPE.SUBTITLE) {
+          subtitleIndex++;
+          subtitles.push({
+            entry: t,
+            number: trackNumber,
+            uid: trackUid,
+            type: "subtitle",
+            label: name ?? usefulLanguage ?? `Subtitle ${subtitleIndex}`,
+            name,
+            language,
+            codecId,
+            enabled,
+            default: isDefault,
+            forced,
+          });
+        }
+      }
+
       return {
-        header,
-        segment,
+        tree: { header, segment },
+        audios,
+        videos,
+        subtitles,
       };
     },
   };
