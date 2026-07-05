@@ -11,10 +11,15 @@ async function main() {
   const backend = await createBackend(filePath, "http");
   const reader = await createBufferedReader(backend);
   const mkv = await openMatroska(reader);
-  // console.log(mkv);
 
   const tree = await mkv.init();
-  console.log(JSON.stringify(tree, null, 2));
+  console.log(
+    JSON.stringify(
+      tree.segment.branches.map((s) => s.name),
+      null,
+      2,
+    ),
+  );
 }
 
 type Backend = {
@@ -22,6 +27,7 @@ type Backend = {
 };
 
 const MAX_SLOTS = 64;
+// TODO: for playback use 512
 const CHUNK_SIZE = 32 * 1024;
 
 class LRU<K = number, T = Uint8Array<ArrayBuffer>> {
@@ -50,10 +56,17 @@ class LRU<K = number, T = Uint8Array<ArrayBuffer>> {
 async function createBackend(filePath: string, source: "local" | "http"): Promise<Backend> {
   if (source === "local") {
     const handle = await open(filePath, "r");
+    const stats = await handle.stat();
+    const fileSize = stats.size;
 
     async function fetchBytes(offset: number, size: number = CHUNK_SIZE) {
-      const buf = new Uint8Array(size);
-      const { bytesRead } = await handle.read(buf, 0, size, offset);
+      if (offset >= fileSize) {
+        return new Uint8Array(0);
+      }
+      const bytesToRead = Math.max(0, Math.min(size, fileSize - offset));
+
+      const buf = new Uint8Array(bytesToRead);
+      const { bytesRead } = await handle.read(buf, 0, bytesToRead, offset);
       return buf.slice(0, bytesRead);
     }
 
@@ -63,16 +76,48 @@ async function createBackend(filePath: string, source: "local" | "http"): Promis
   }
 
   if (source === "http") {
+    let fileSize = 0;
+
+    const response = await fetch(filePath, {
+      headers: {
+        Range: `bytes=0-0`,
+      },
+    });
+    if (response.status === 206 && response.headers.has("content-range")) {
+      const endByte = response.headers.get("content-range")!.split("/")?.[1];
+      if (endByte) {
+        fileSize = Number(endByte);
+      }
+    }
+
     async function fetchBytes(offset: number, size: number = CHUNK_SIZE) {
+      if (offset >= fileSize) {
+        return new Uint8Array(0);
+      }
+
       const start = offset;
       const end = offset + size - 1;
+      const rangeEnd = Math.min(fileSize - 1, end);
+
       const response = await fetch(filePath, {
         headers: {
-          Range: `bytes=${start}-${end}`,
+          // handle content-range final byte number
+          Range: `bytes=${start}-${rangeEnd}`,
         },
       });
 
-      return new Uint8Array(await response.arrayBuffer());
+      if (response.status === 206) {
+        return new Uint8Array(await response.arrayBuffer());
+      }
+
+      // we need to stream
+      if (response.status === 200) {
+        throw new Error("Can't stream");
+      }
+
+      // TODO: handle 416
+
+      throw new Error("Unexpected");
     }
 
     return {
@@ -139,7 +184,7 @@ type Element = {
   size: number;
   dataStart: number;
   end: number;
-  branches?: Element[];
+  branches: Element[];
 };
 
 async function openMatroska(reader: BufferedReader) {
@@ -229,6 +274,16 @@ async function openMatroska(reader: BufferedReader) {
     };
   }
 
+  async function parseNumberAt(offset: number, size: number) {
+    let result = reader.read(offset, size);
+    let bytes = result instanceof Uint8Array ? result : await result;
+    let value = 0;
+    for (const b of bytes) {
+      value = value * 256 + b;
+    }
+    return value;
+  }
+
   async function parseElement(cursor: number): Promise<Element> {
     const { id, width } = await parseIdAt(cursor);
     cursor += width;
@@ -282,11 +337,25 @@ async function openMatroska(reader: BufferedReader) {
       throw new Error(`${elementInfo.name} is not allowed to have unknown size`);
     }
 
+    // NOTE: generally SEGMENT is known size, so this branch is mostly useless
     if (elementInfo.unknownSizeAllowed && size === -1) {
       let offset = cursor;
       while (true) {
         if (elementInfo.name === "CLUSTER") {
           break;
+
+          // NOTE: This **kinda** skips full CLUSTER tree check, I went with full break on CLUSTER as it is still slow (~30s)
+          // const { id: nextId, width: idWidth } = await parseIdAt(offset);
+          // if (LEVEL_0_AND_1_ELEMENT_IDS.includes(nextId)) {
+          //   break;
+          // }
+          //
+          // offset += idWidth;
+          // const { size, width: sizeWidth } = await parseSizeAt(offset);
+          // if (size === -1) {
+          //   throw new Error("Size is -1 inside CLUSTER: not handled yet")
+          // }
+          // offset += sizeWidth + size;
         }
         if (elementInfo.name === "SEGMENT") {
           try {
@@ -316,6 +385,45 @@ async function openMatroska(reader: BufferedReader) {
     async init() {
       const header = await parseElement(0);
       const segment = await parseElement(header.dataStart + header.size);
+
+      const seekHeadChildren = segment.branches.find((s) => s.name === "SEEK_HEAD")!.branches;
+
+      const seekTargets = [];
+
+      for (const el of seekHeadChildren) {
+        const seekPositionElement = el.branches.find((b) => b.name === "SEEK_POSITION")!;
+        const position = await parseNumberAt(
+          seekPositionElement.dataStart,
+          seekPositionElement.size,
+        );
+
+        seekTargets.push({
+          seek: el,
+          offset: segment.dataStart + position,
+        });
+      }
+
+      // File-order seeks avoid jumping around, making chunk cache hits/prefetch more likely.
+      seekTargets.sort((a, b) => a.offset - b.offset);
+
+      for (const { seek: el, offset } of seekTargets) {
+        const seekIdElement = el.branches[0]!;
+
+        const { id } = await parseIdAt(seekIdElement!.dataStart);
+        const elementInfo = ELEMENT_INFO[id]!;
+        const name = elementInfo?.name ?? `UNKNOWN(0x${id.toString(16)})`;
+        if (
+          segment.branches.map((b) => b.name).includes(name) ||
+          name === "ATTACHMENTS" ||
+          name === "CLUSTER"
+        ) {
+          continue;
+        }
+
+        const element = await parseElement(offset);
+        segment.branches.push(element);
+      }
+
       return {
         header,
         segment,
