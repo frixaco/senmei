@@ -1,9 +1,8 @@
 import { open } from "fs/promises";
 import { ELEMENT_INFO, TRACK_TYPE, type ElementName } from "./constants";
+import { parseBytesIntoFormat } from "./codec-parsers";
 
 // const filePath = "./data/fate08.mkv";
-// const filePath = "./data/hellmode07.mkv";
-// const filePath = "./data/unknown-size-segment-clusters.mkv";
 const filePath =
   "https://rqbit.anitrack.frixaco.com/torrents/0/stream/0/[SubsPlease]%20Tensei%20Shitara%20Slime%20Datta%20Ken%20S4%20-%2013%20(1080p)%20[C3528385].mkv";
 
@@ -13,7 +12,7 @@ async function main() {
   const matroska = await openMatroska(reader);
 
   const mkv = await matroska.init();
-  console.log(JSON.stringify(mkv, null, 2));
+  console.log("codecid", mkv.videos[0]?.codecId);
 }
 
 type Backend = {
@@ -91,11 +90,11 @@ async function createBackend(filePath: string, source: "local" | "http"): Promis
 
       const start = offset;
       const end = offset + size - 1;
+      // handle content-range final byte number
       const rangeEnd = Math.min(fileSize - 1, end);
 
       const response = await fetch(filePath, {
         headers: {
-          // handle content-range final byte number
           Range: `bytes=${start}-${rangeEnd}`,
         },
       });
@@ -303,6 +302,12 @@ async function openMatroska(reader: BufferedReader) {
     return null;
   }
 
+  async function parseBytesAt(offset: number, size: number) {
+    let result = reader.read(offset, size);
+    let bytes = result instanceof Uint8Array ? result : await result;
+    return bytes;
+  }
+
   async function parseElement(cursor: number): Promise<Element> {
     const { id, width } = await parseIdAt(cursor);
     cursor += width;
@@ -461,6 +466,7 @@ async function openMatroska(reader: BufferedReader) {
         const languageBcp47Element = t.branches.find((b) => b.name === "LANGUAGE_BCP47");
         const languageElement = t.branches.find((b) => b.name === "LANGUAGE");
         const codecIdElement = t.branches.find((b) => b.name === "CODEC_ID");
+        const codecPrivateElement = t.branches.find((b) => b.name === "CODEC_PRIVATE");
         const enabledElement = t.branches.find((b) => b.name === "FLAG_ENABLED");
         const defaultElement = t.branches.find((b) => b.name === "FLAG_DEFAULT");
         const forcedElement = t.branches.find((b) => b.name === "FLAG_FORCED");
@@ -485,6 +491,10 @@ async function openMatroska(reader: BufferedReader) {
         const codecId = codecIdElement
           ? await parseStringAt(codecIdElement.dataStart, codecIdElement.size)
           : null;
+        const codecPrivate = codecPrivateElement
+          ? await parseBytesAt(codecPrivateElement.dataStart, codecPrivateElement.size)
+          : null;
+        const codecFormat = parseBytesIntoFormat(codecId, codecPrivate);
         const enabled = enabledElement
           ? (await parseNumberAt(enabledElement.dataStart, enabledElement.size)) !== 0
           : true;
@@ -511,6 +521,8 @@ async function openMatroska(reader: BufferedReader) {
             name,
             language,
             codecId,
+            codecPrivate,
+            codecFormat,
             enabled,
             default: isDefault,
             forced,
@@ -546,6 +558,8 @@ async function openMatroska(reader: BufferedReader) {
             name,
             language,
             codecId,
+            codecPrivate,
+            codecFormat,
             enabled,
             default: isDefault,
             forced,
@@ -575,6 +589,8 @@ async function openMatroska(reader: BufferedReader) {
             name,
             language,
             codecId,
+            codecPrivate,
+            codecFormat,
             enabled,
             default: isDefault,
             forced,

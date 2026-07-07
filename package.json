@@ -9,11 +9,13 @@
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint .",
-    "lint:fix": "oxlint --fix ."
+    "lint:fix": "oxlint --fix .",
+    "typecheck": "tsgo --noEmit"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.1",
     "@types/node": "^26.1.0",
+    "@typescript/native-preview": "^7.0.0-dev.20260706.1",
     "@webgpu/types": "^0.1.71",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",
