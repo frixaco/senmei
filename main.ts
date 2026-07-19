@@ -1,3 +1,4 @@
+import { play } from "./mkv.ts";
 import * as autoDownscalePreX2 from "./shaders/Anime4K_AutoDownscalePre_x2.ts";
 import * as autoDownscalePreX4 from "./shaders/Anime4K_AutoDownscalePre_x4.ts";
 import * as clamp from "./shaders/Anime4K_Clamp_Highlights.ts";
@@ -42,6 +43,11 @@ let selectedFile: File | null = null;
 
 status.textContent = "Pick an image";
 setButtonsIdleState();
+
+on("playMkv", "click", async () => {
+  const url = getElementById<HTMLInputElement>("videoUrl").value
+  await play(url)
+})
 
 on("processBtn", "click", async () => {
   if (!selectedFile) {

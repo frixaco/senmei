@@ -50,6 +50,7 @@ type ParsedCodecFormat =
       description: Uint8Array<ArrayBufferLike>;
       sampleRate: number;
       numberOfChannels: number;
+      framesPerPacket: 1024 | 960;
     }
   | {
       kind: "subtitle";
@@ -116,6 +117,10 @@ function parseHevcCodecPrivate(codecPrivate: Uint8Array<ArrayBufferLike>): Parse
 function parseAacCodecPrivate(codecPrivate: Uint8Array<ArrayBufferLike>): ParsedCodecFormat {
   const bits = createBitReader(codecPrivate);
   const audioObjectType = readAacAudioObjectType(bits);
+  if (audioObjectType !== 2) {
+    throw new Error(`Unsupported AAC audioObjectType ${audioObjectType}; expected AAC-LC (2)`);
+  }
+
   const samplingFrequencyIndex = bits.read(4);
   const sampleRate =
     samplingFrequencyIndex === 0x0f ? bits.read(24) : AAC_SAMPLE_RATES[samplingFrequencyIndex];
@@ -129,6 +134,9 @@ function parseAacCodecPrivate(codecPrivate: Uint8Array<ArrayBufferLike>): Parsed
     throw new Error(`Unsupported AAC channelConfiguration ${channelConfiguration}`);
   }
 
+  const frameLengthFlag = bits.read(1);
+  const framesPerPacket = frameLengthFlag === 0 ? 1024 : 960;
+
   return {
     kind: "audio",
     format: "aac",
@@ -136,6 +144,7 @@ function parseAacCodecPrivate(codecPrivate: Uint8Array<ArrayBufferLike>): Parsed
     description: codecPrivate,
     sampleRate,
     numberOfChannels,
+    framesPerPacket,
   };
 }
 

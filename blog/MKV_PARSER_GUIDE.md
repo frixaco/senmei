@@ -434,10 +434,41 @@ Algorithm:
 - jump to cluster offset via Segment Position conversion
 - decode forward from nearest keyframe
 
+#### Seeking model to copy from mpv
+
+IINA delegates seeking to libmpv; it does not implement Matroska seeking itself. For a normal
+Matroska seek, mpv:
+
+1. Uses the selected video track's cue index when video is active.
+2. Chooses the nearest video cue at or before the demux target.
+3. Range-seeks the source to that cue's Cluster offset.
+4. Parses interleaved video, audio, and subtitle Blocks forward from that Cluster.
+5. Decodes from the video keyframe, discards decoded video before the presentation target, and
+   trims decoded PCM before the audio synchronization point.
+
+mpv does not perform a separate backward Cluster search when the audio track has no cues. If the
+first available audio packet starts after the synchronization point, mpv keeps its real timestamp
+and delays audio output instead of inventing missing samples.
+
+This is the behavior Senmei should implement. Cues select a nearby random-access Cluster; they do
+not need to index every selected track or identify the exact compressed audio packet containing the
+requested timestamp. The current test MKV has 720 video cues, 362 subtitle cues, and no audio cues,
+which is valid because RFC 9559 permits omitting audio cues when a video track is present.
+
+Reference implementation paths:
+
+- mpv cue parsing and Matroska seek: `demux/demux_mkv.c` (`demux_mkv_read_cues`,
+  `seek_with_cues`, `demux_mkv_seek`)
+- mpv decoded video seek filtering: `player/video.c` (`video_output_image`)
+- mpv decoded audio clipping and synchronized start: `audio/aframe.c`
+  (`mp_aframe_clip_timestamps`) and `player/audio.c` (`audio_start_ao`)
+- IINA libmpv seek delegation: `iina/PlayerCore.swift` and `iina/MPVController.swift`
+
 Pass checks:
 
 - repeated random seeks land near target
 - no off-by-one in offset math
+- seeking remains synchronized when Cues index video but not audio
 - scrub interactions do not stall on frequent short seeks
 
 Expected output shape:

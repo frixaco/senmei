@@ -1,175 +1,50 @@
-import { open } from "fs/promises";
-import { ELEMENT_INFO, TRACK_TYPE, type ElementName } from "./constants";
+import { ELEMENT_INFO, LEVEL_0_AND_1_ELEMENT_IDS, TRACK_TYPE, type ElementName } from "./constants";
 import { parseBytesIntoFormat } from "./codec-parsers";
+import { createBackend } from "./backend";
+import { createBufferedReader, type BufferedReader } from "./buffered-reader";
 
-// const filePath = "./data/fate08.mkv";
-const filePath =
-  "https://rqbit.anitrack.frixaco.com/torrents/0/stream/0/[SubsPlease]%20Tensei%20Shitara%20Slime%20Datta%20Ken%20S4%20-%2013%20(1080p)%20[C3528385].mkv";
-
-async function main() {
-  const backend = await createBackend(filePath, "http");
-  const reader = await createBufferedReader(backend);
-  const matroska = await openMatroska(reader);
+export async function play(url: string) {
+  const backend = await createBackend(url, "http");
+  const reader = createBufferedReader(backend);
+  const matroska = openMatroska(reader);
 
   const mkv = await matroska.init();
-  console.log("codecid", mkv.videos[0]?.codecId);
+  console.log(mkv.audios);
+
+  await playVideoChunk(mkv);
 }
 
-type Backend = {
-  fetchBytes: (offset: number, size?: number) => Promise<Uint8Array<ArrayBuffer>>;
-};
+async function playVideoChunk(mkv: any) {
+  const decoder = new VideoDecoder({
+    output(data) {
+      console.log(data);
+    },
+    error(err) {
+      throw err;
+    },
+  });
 
-const MAX_SLOTS = 64;
+  const timestamp = 0 * 1_000_000;
+  const chunk = await mkv.getVideoData(0, timestamp);
+
+  decoder.configure({
+    codec: chunk.codec,
+    description: chunk.description,
+  });
+
+  decoder.decode(
+    new EncodedVideoChunk({
+      type: chunk.type, // as per spec
+      data: chunk.data,
+      timestamp: chunk.timestamp,
+      duration: chunk.duration,
+    }),
+  );
+}
+
+export const MAX_SLOTS = 64;
 // TODO: for playback use 512
-const CHUNK_SIZE = 32 * 1024;
-
-class LRU<K = number, T = Uint8Array<ArrayBuffer>> {
-  map = new Map<K, T>();
-
-  get(chunkIndex: K) {
-    if (this.map.has(chunkIndex)) {
-      const value = this.map.get(chunkIndex)!;
-      this.map.delete(chunkIndex);
-      this.map.set(chunkIndex, value);
-      return value;
-    }
-    return null;
-  }
-
-  put(chunkIndex: K, data: T) {
-    if (this.map.size >= MAX_SLOTS) {
-      const oldest = this.map.keys().next().value!;
-      this.map.delete(oldest);
-    }
-
-    this.map.set(chunkIndex, data);
-  }
-}
-
-async function createBackend(filePath: string, source: "local" | "http"): Promise<Backend> {
-  if (source === "local") {
-    const handle = await open(filePath, "r");
-    const stats = await handle.stat();
-    const fileSize = stats.size;
-
-    async function fetchBytes(offset: number, size: number = CHUNK_SIZE) {
-      if (offset >= fileSize) {
-        return new Uint8Array(0);
-      }
-      const bytesToRead = Math.max(0, Math.min(size, fileSize - offset));
-
-      const buf = new Uint8Array(bytesToRead);
-      const { bytesRead } = await handle.read(buf, 0, bytesToRead, offset);
-      return buf.slice(0, bytesRead);
-    }
-
-    return {
-      fetchBytes,
-    };
-  }
-
-  if (source === "http") {
-    let fileSize = 0;
-
-    const response = await fetch(filePath, {
-      headers: {
-        Range: `bytes=0-0`,
-      },
-    });
-    if (response.status === 206 && response.headers.has("content-range")) {
-      const endByte = response.headers.get("content-range")!.split("/")?.[1];
-      if (endByte) {
-        fileSize = Number(endByte);
-      }
-    }
-
-    async function fetchBytes(offset: number, size: number = CHUNK_SIZE) {
-      if (offset >= fileSize) {
-        return new Uint8Array(0);
-      }
-
-      const start = offset;
-      const end = offset + size - 1;
-      // handle content-range final byte number
-      const rangeEnd = Math.min(fileSize - 1, end);
-
-      const response = await fetch(filePath, {
-        headers: {
-          Range: `bytes=${start}-${rangeEnd}`,
-        },
-      });
-
-      if (response.status === 206) {
-        return new Uint8Array(await response.arrayBuffer());
-      }
-
-      // we need to stream
-      if (response.status === 200) {
-        throw new Error("Can't stream");
-      }
-
-      // TODO: handle 416
-
-      throw new Error("Unexpected");
-    }
-
-    return {
-      fetchBytes,
-    };
-  }
-
-  return {
-    fetchBytes: () => new Promise(() => new Uint8Array(0)),
-  };
-}
-
-type BufferedReader = {
-  read: (from: number, size: number) => Uint8Array | Promise<Uint8Array>;
-};
-
-// TODO: disable prefetching for .init()
-async function createBufferedReader(backend: Backend): Promise<BufferedReader> {
-  const cache = new LRU();
-  const prefetched = new LRU<number, Promise<Uint8Array<ArrayBuffer>>>();
-
-  async function fetchAndCache(
-    chunkIndex: number,
-    localOffset: number,
-    size: number,
-  ): Promise<Uint8Array> {
-    let chunk: Uint8Array<ArrayBuffer>;
-    const pending = prefetched.get(chunkIndex);
-    if (pending) {
-      chunk = await pending;
-      prefetched.map.delete(chunkIndex);
-    } else {
-      chunk = await backend.fetchBytes(chunkIndex * CHUNK_SIZE, CHUNK_SIZE);
-    }
-    cache.put(chunkIndex, chunk);
-
-    if (!cache.get(chunkIndex + 1) && !prefetched.get(chunkIndex + 1)) {
-      prefetched.put(chunkIndex + 1, backend.fetchBytes((chunkIndex + 1) * CHUNK_SIZE, CHUNK_SIZE));
-    }
-
-    return chunk.slice(localOffset, localOffset + size);
-  }
-
-  function read(offset: number, size: number): Uint8Array | Promise<Uint8Array> {
-    const chunkIndex = Math.floor(offset / CHUNK_SIZE);
-    const localOffset = offset % CHUNK_SIZE;
-
-    const chunk = cache.get(chunkIndex);
-    if (chunk !== null) {
-      return chunk.slice(localOffset, localOffset + size);
-    }
-
-    return fetchAndCache(chunkIndex, localOffset, size);
-  }
-
-  return {
-    read,
-  };
-}
+export const CHUNK_SIZE = 32 * 1024;
 
 type Element = {
   id: number;
@@ -181,143 +56,17 @@ type Element = {
   branches: Element[];
 };
 
-async function openMatroska(reader: BufferedReader) {
-  async function parseIdAt(offset: number) {
-    let result = reader.read(offset, 1);
-    let firstByte = (result instanceof Uint8Array ? result : await result)[0];
-    if (firstByte === undefined) {
-      throw new Error("Unexpected EOF while reading element ID");
-    }
-    let width = 1;
-    let mask = 0x80;
-    while ((firstByte & mask) === 0) {
-      width++;
-      mask >>= 1;
-      if (mask === 0) {
-        throw new Error(`Invalid element ID at offset ${offset}`);
-      }
-    }
-    result = reader.read(offset, width);
-    let bytes = result instanceof Uint8Array ? result : await result;
-    if (bytes.length < width) {
-      throw new Error(`Truncated element ID at offset ${offset}`);
-    }
-    let id = firstByte;
-    for (let i = 1; i < width; i++) {
-      id = id * 256 + bytes[i]!;
-    }
-
-    return {
-      id,
-      width,
-    };
-  }
-
-  async function parseSizeAt(offset: number) {
-    let result = reader.read(offset, 1);
-    let firstByte = (result instanceof Uint8Array ? result : await result)[0];
-    if (firstByte === undefined) {
-      throw new Error("Unexpected EOF while reading element size");
-    }
-    let width = 1;
-    let mask = 0x80;
-    while ((firstByte & mask) === 0) {
-      width++;
-      mask >>= 1;
-      if (mask === 0) {
-        throw new Error(`Invalid element size at offset ${offset}`);
-      }
-    }
-    result = reader.read(offset, width);
-    let bytes = result instanceof Uint8Array ? result : await result;
-    if (bytes.length < width) {
-      throw new Error(`Truncated element size at offset ${offset}`);
-    }
-    let size = firstByte & (mask - 1);
-    for (let i = 1; i < width; i++) {
-      size = size * 256 + bytes[i]!;
-    }
-
-    let firstByteAllOnes = (firstByte & (mask - 1)) === mask - 1;
-    if (firstByteAllOnes && bytes.slice(1).every((b) => b === 0xff)) {
-      return {
-        width,
-        size: -1,
-      };
-    }
-
-    return {
-      width,
-      size,
-    };
-  }
-
-  async function peekElementAt(offset: number) {
-    const { id, width: idWidth } = await parseIdAt(offset);
-    const { size, width: sizeWidth } = await parseSizeAt(offset + idWidth);
-    const elementInfo = ELEMENT_INFO[id];
-    const name = elementInfo?.name ?? `UNKNOWN(0x${id.toString(16)})`;
-    const dataStart = offset + idWidth + sizeWidth;
-
-    return {
-      id,
-      name,
-      size,
-      dataStart,
-      end: size >= 0 ? dataStart + size : -1,
-    };
-  }
-
-  async function parseNumberAt(offset: number, size: number) {
-    let result = reader.read(offset, size);
-    let bytes = result instanceof Uint8Array ? result : await result;
-    let value = 0;
-    for (const b of bytes) {
-      value = value * 256 + b;
-    }
-    return value;
-  }
-
-  async function parseStringAt(offset: number, size: number) {
-    let result = reader.read(offset, size);
-    let bytes = result instanceof Uint8Array ? result : await result;
-    const str = new TextDecoder("utf-8").decode(bytes);
-
-    return str;
-  }
-
-  async function parseFloatAt(offset: number, size: number) {
-    let result = reader.read(offset, size);
-    let bytes = result instanceof Uint8Array ? result : await result;
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-
-    if (size === 4) {
-      return view.getFloat32(0, false);
-    }
-
-    if (size === 8) {
-      return view.getFloat64(0, false);
-    }
-
-    return null;
-  }
-
-  async function parseBytesAt(offset: number, size: number) {
-    let result = reader.read(offset, size);
-    let bytes = result instanceof Uint8Array ? result : await result;
-    return bytes;
-  }
+function openMatroska(reader: BufferedReader) {
+  let firstClusterOffset = 0;
 
   async function parseElement(cursor: number): Promise<Element> {
-    const { id, width } = await parseIdAt(cursor);
+    const { id, width, info, name } = await parseIdAt(cursor);
     cursor += width;
 
     const { size, width: sizeWidth } = await parseSizeAt(cursor);
     cursor += sizeWidth;
 
-    const elementInfo = ELEMENT_INFO[id]!;
-    const name = elementInfo?.name ?? `UNKNOWN(0x${id.toString(16)})`;
-    const isMaster = elementInfo?.isMaster ?? false;
+    const isMaster = info?.isMaster ?? false;
     let branches: Element[] = [];
 
     if (!isMaster) {
@@ -341,6 +90,7 @@ async function openMatroska(reader: BufferedReader) {
           const childHeader = await peekElementAt(offset);
 
           if (childHeader.name === "CLUSTER") {
+            firstClusterOffset = offset;
             break;
           }
 
@@ -357,15 +107,15 @@ async function openMatroska(reader: BufferedReader) {
       end = offset;
     }
 
-    if (!elementInfo.unknownSizeAllowed && size === -1) {
-      throw new Error(`${elementInfo.name} is not allowed to have unknown size`);
+    if (!info.unknownSizeAllowed && size === -1) {
+      throw new Error(`${info.name} is not allowed to have unknown size`);
     }
 
     // NOTE: generally SEGMENT is known size, so this branch is mostly useless
-    if (elementInfo.unknownSizeAllowed && size === -1) {
+    if (info.unknownSizeAllowed && size === -1) {
       let offset = cursor;
       while (true) {
-        if (elementInfo.name === "CLUSTER") {
+        if (info.name === "CLUSTER") {
           break;
 
           // NOTE: This **kinda** skips full CLUSTER tree check, I went with full break on CLUSTER as it is still slow (~30s)
@@ -381,7 +131,7 @@ async function openMatroska(reader: BufferedReader) {
           // }
           // offset += sizeWidth + size;
         }
-        if (elementInfo.name === "SEGMENT") {
+        if (info.name === "SEGMENT") {
           try {
             const child = await parseElement(offset);
             branches.push(child);
@@ -402,6 +152,148 @@ async function openMatroska(reader: BufferedReader) {
       dataStart: cursor,
       branches,
       end,
+    };
+  }
+
+  async function parseClusterAt(offset: number) {
+    const cluster = await peekElementAt(offset);
+    if (cluster.name !== "CLUSTER") {
+      throw new Error(`Expected Cluster at offset ${offset}, found ${cluster.name}`);
+    }
+
+    let cursor = cluster.dataStart;
+    let timestamp: number | null = null;
+    const blocks: Element[] = [];
+    const knownEnd = cluster.size === -1 ? null : cluster.end;
+
+    while (knownEnd === null || cursor < knownEnd) {
+      // if (knownEnd === null && (await reader.read(cursor, 1)).length === 0) {
+      //   break;
+      // }
+
+      const child = await peekElementAt(cursor);
+
+      if (LEVEL_0_AND_1_ELEMENT_IDS.some((id) => id === child.id)) {
+        if (knownEnd === null) {
+          break;
+        }
+        throw new Error(`${child.name} cannot be nested inside a known-sized Cluster`);
+      }
+
+      if (child.size === -1) {
+        throw new Error(`${child.name} inside Cluster has unknown size`);
+      }
+
+      if (knownEnd !== null && child.end > knownEnd) {
+        throw new Error(`${child.name} extends past the end of its Cluster`);
+      }
+
+      if (child.name === "TIMESTAMP") {
+        if (timestamp !== null) {
+          throw new Error("Cluster contains more than one Timestamp");
+        }
+        timestamp = await parseNumberAt(child.dataStart, child.size);
+      }
+
+      if (child.name === "SIMPLE_BLOCK" || child.name === "BLOCK_GROUP") {
+        blocks.push(await parseElement(cursor));
+      }
+
+      cursor = child.end;
+    }
+
+    if (knownEnd !== null && cursor !== knownEnd) {
+      throw new Error("Cluster children do not end at the Cluster boundary");
+    }
+
+    if (timestamp === null) {
+      throw new Error("Cluster does not contain a Timestamp");
+    }
+
+    return { timestamp, blocks };
+  }
+
+  async function parseIdAt(offset: number) {
+    const firstByte = (await reader.read(offset, 1))[0];
+    if (firstByte === undefined) {
+      throw new Error("Unexpected EOF while reading element ID");
+    }
+    let width = 1;
+    let mask = 0x80;
+    while ((firstByte & mask) === 0) {
+      width++;
+      mask >>= 1;
+      if (mask === 0) {
+        throw new Error(`Invalid element ID at offset ${offset}`);
+      }
+    }
+    const bytes = await reader.read(offset, width);
+    if (bytes.length < width) {
+      throw new Error(`Truncated element ID at offset ${offset}`);
+    }
+    let id = firstByte;
+    for (let i = 1; i < width; i++) {
+      id = id * 256 + bytes[i]!;
+    }
+    const info = ELEMENT_INFO[id]!;
+    const name = info?.name ?? `UNKNOWN(0x${id.toString(16)})`;
+
+    return {
+      id,
+      width,
+      info,
+      name,
+    };
+  }
+
+  async function parseSizeAt(offset: number) {
+    const firstByte = (await reader.read(offset, 1))[0];
+    if (firstByte === undefined) {
+      throw new Error("Unexpected EOF while reading element size");
+    }
+    let width = 1;
+    let mask = 0x80;
+    while ((firstByte & mask) === 0) {
+      width++;
+      mask >>= 1;
+      if (mask === 0) {
+        throw new Error(`Invalid element size at offset ${offset}`);
+      }
+    }
+    const bytes = await reader.read(offset, width);
+    if (bytes.length < width) {
+      throw new Error(`Truncated element size at offset ${offset}`);
+    }
+    let size = firstByte & (mask - 1);
+    for (let i = 1; i < width; i++) {
+      size = size * 256 + bytes[i]!;
+    }
+
+    const firstByteAllOnes = (firstByte & (mask - 1)) === mask - 1;
+    if (firstByteAllOnes && bytes.slice(1).every((b) => b === 0xff)) {
+      return {
+        width,
+        size: -1,
+      };
+    }
+
+    return {
+      width,
+      size,
+    };
+  }
+
+  async function peekElementAt(offset: number) {
+    const { id, width: idWidth, name } = await parseIdAt(offset);
+    const { size, width: sizeWidth } = await parseSizeAt(offset + idWidth);
+    const dataStart = offset + idWidth + sizeWidth;
+
+    return {
+      id,
+      name,
+      size,
+      dataStart,
+      end: size >= 0 ? dataStart + size : -1,
     };
   }
 
@@ -433,11 +325,9 @@ async function openMatroska(reader: BufferedReader) {
       for (const { seek: el, offset } of seekTargets) {
         const seekIdElement = el.branches[0]!;
 
-        const { id } = await parseIdAt(seekIdElement!.dataStart);
-        const elementInfo = ELEMENT_INFO[id]!;
-        const name = elementInfo?.name ?? `UNKNOWN(0x${id.toString(16)})`;
+        const { name } = await parseIdAt(seekIdElement.dataStart);
         if (
-          segment.branches.map((b) => b.name).includes(name) ||
+          segment.branches.some((branch) => branch.name === name) ||
           name === "ATTACHMENTS" ||
           name === "CLUSTER"
         ) {
@@ -448,16 +338,29 @@ async function openMatroska(reader: BufferedReader) {
         segment.branches.push(element);
       }
 
-      let audios = [];
-      let videos = [];
-      let subtitles = [];
-      let audioIndex = 0;
-      let videoIndex = 0;
-      let subtitleIndex = 0;
+      const audios = [];
+      const videos = [];
+      const subtitles = [];
 
       const tracks = segment.branches.find((b) => b.name === "TRACKS")!.branches;
 
       for (const t of tracks) {
+        const track = await parseTrack(t);
+
+        switch (track.type) {
+          case "video":
+            videos.push(track);
+            break;
+          case "audio":
+            audios.push(track);
+            break;
+          case "subtitle":
+            subtitles.push(track);
+            break;
+        }
+      }
+
+      async function parseTrack(t: Element) {
         const tte = t.branches.find((b) => b.name === "TRACK_TYPE")!;
         const trackType = await parseNumberAt(tte.dataStart, tte.size);
         const trackNumberElement = t.branches.find((b) => b.name === "TRACK_NUMBER");
@@ -506,18 +409,21 @@ async function openMatroska(reader: BufferedReader) {
           : false;
 
         if (trackType === TRACK_TYPE.VIDEO) {
-          videoIndex++;
+          if (codecFormat.kind !== "video") {
+            throw new Error(`Unsupported video codec: ${codecId ?? "unknown"}`);
+          }
+
           const video = t.branches.find((b) => b.name === "VIDEO");
           const pixelWidthElement = video?.branches.find((b) => b.name === "PIXEL_WIDTH");
           const pixelHeightElement = video?.branches.find((b) => b.name === "PIXEL_HEIGHT");
           const displayWidthElement = video?.branches.find((b) => b.name === "DISPLAY_WIDTH");
           const displayHeightElement = video?.branches.find((b) => b.name === "DISPLAY_HEIGHT");
-          videos.push({
+          return {
             entry: t,
             number: trackNumber,
             uid: trackUid,
-            type: "video",
-            label: name ?? usefulLanguage ?? `Video ${videoIndex}`,
+            type: "video" as const,
+            label: name ?? usefulLanguage ?? `Video ${videos.length + 1}`,
             name,
             language,
             codecId,
@@ -538,23 +444,26 @@ async function openMatroska(reader: BufferedReader) {
             displayHeight: displayHeightElement
               ? await parseNumberAt(displayHeightElement.dataStart, displayHeightElement.size)
               : null,
-          });
+          };
         }
 
         if (trackType === TRACK_TYPE.AUDIO) {
-          audioIndex++;
+          if (codecFormat.kind !== "audio") {
+            throw new Error(`Unsupported audio codec: ${codecId ?? "unknown"}`);
+          }
+
           const audio = t.branches.find((b) => b.name === "AUDIO");
           const channelsElement = audio?.branches.find((b) => b.name === "CHANNELS");
           const samplingFrequencyElement = audio?.branches.find(
             (b) => b.name === "SAMPLING_FREQUENCY",
           );
           const bitDepthElement = audio?.branches.find((b) => b.name === "BIT_DEPTH");
-          audios.push({
+          return {
             entry: t,
             number: trackNumber,
             uid: trackUid,
-            type: "audio",
-            label: name ?? usefulLanguage ?? `Audio ${audioIndex}`,
+            type: "audio" as const,
+            label: name ?? usefulLanguage ?? `Audio ${audios.length + 1}`,
             name,
             language,
             codecId,
@@ -575,17 +484,20 @@ async function openMatroska(reader: BufferedReader) {
             bitDepth: bitDepthElement
               ? await parseNumberAt(bitDepthElement.dataStart, bitDepthElement.size)
               : null,
-          });
+          };
         }
 
         if (trackType === TRACK_TYPE.SUBTITLE) {
-          subtitleIndex++;
-          subtitles.push({
+          if (codecFormat.kind !== "subtitle") {
+            throw new Error(`Unsupported subtitle codec: ${codecId ?? "unknown"}`);
+          }
+
+          return {
             entry: t,
             number: trackNumber,
             uid: trackUid,
-            type: "subtitle",
-            label: name ?? usefulLanguage ?? `Subtitle ${subtitleIndex}`,
+            type: "subtitle" as const,
+            label: name ?? usefulLanguage ?? `Subtitle ${subtitles.length + 1}`,
             name,
             language,
             codecId,
@@ -594,8 +506,13 @@ async function openMatroska(reader: BufferedReader) {
             enabled,
             default: isDefault,
             forced,
-          });
+          };
         }
+
+        return {
+          entry: t,
+          type: "unsupported" as const,
+        };
       }
 
       return {
@@ -603,9 +520,80 @@ async function openMatroska(reader: BufferedReader) {
         audios,
         videos,
         subtitles,
+        async getVideoData(
+          index: number,
+          timestamp: number = 0,
+        ): Promise<{
+          codec: string;
+          description?: Uint8Array<ArrayBufferLike>;
+          type: "key" | "delta";
+          timestamp: number;
+          duration?: number;
+        }> {
+          const track = this.videos[index]!;
+
+          const cluster = await parseClusterAt(firstClusterOffset);
+          const firstBlock = cluster.blocks[0];
+          if (!firstBlock) {
+            throw new Error("Cluster does not contain a block");
+          }
+
+          const frame =
+            firstBlock.name === "BLOCK_GROUP"
+              ? firstBlock.branches.find((element) => element.name === "BLOCK")
+              : firstBlock;
+          if (!frame) {
+            throw new Error("Block group does not contain a block");
+          }
+
+          const calcTimestamp = () => 0;
+
+          const type = "key"; // TODO: parse flag byte
+          const duration = 0;
+          return {
+            codec: track.codecFormat.codec,
+            description: track.codecPrivate ?? undefined,
+            type,
+            timestamp: calcTimestamp(),
+            duration,
+          };
+        },
       };
     },
   };
-}
 
-void main();
+  async function parseNumberAt(offset: number, size: number) {
+    const bytes = await reader.read(offset, size);
+    let value = 0;
+    for (const b of bytes) {
+      value = value * 256 + b;
+    }
+    return value;
+  }
+
+  async function parseStringAt(offset: number, size: number) {
+    const bytes = await reader.read(offset, size);
+    const str = new TextDecoder("utf-8").decode(bytes);
+
+    return str;
+  }
+
+  async function parseFloatAt(offset: number, size: number) {
+    const bytes = await reader.read(offset, size);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+    if (size === 4) {
+      return view.getFloat32(0, false);
+    }
+
+    if (size === 8) {
+      return view.getFloat64(0, false);
+    }
+
+    return null;
+  }
+
+  async function parseBytesAt(offset: number, size: number) {
+    return await reader.read(offset, size);
+  }
+}
