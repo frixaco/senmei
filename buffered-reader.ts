@@ -55,9 +55,43 @@ export function createBufferedReader(backend: Backend): BufferedReader {
     return chunk.slice(localOffset, localOffset + size);
   }
 
-  function read(offset: number, size: number): Uint8Array | Promise<Uint8Array> {
+  async function read(offset: number, size: number): Promise<Uint8Array> {
     const chunkIndex = Math.floor(offset / CHUNK_SIZE);
     const localOffset = offset % CHUNK_SIZE;
+
+    if (localOffset + size > CHUNK_SIZE) {
+      const chunks: Uint8Array[] = [];
+      const initialPartialChunkBytes = CHUNK_SIZE - localOffset;
+      const wholeChunkCount = Math.floor((size - initialPartialChunkBytes) / CHUNK_SIZE);
+      const lastPartialOffset = (offset + size) % CHUNK_SIZE;
+
+      chunks.push(
+        cache.get(chunkIndex)?.slice(localOffset) ??
+          (await fetchAndCache(chunkIndex, localOffset, initialPartialChunkBytes)),
+      );
+
+      for (let i = 1; i <= wholeChunkCount; i++) {
+        chunks.push(
+          cache.get(chunkIndex + i) ?? (await fetchAndCache(chunkIndex + i, 0, CHUNK_SIZE)),
+        );
+      }
+
+      if (lastPartialOffset > 0) {
+        const lastChunkIndex = chunkIndex + wholeChunkCount + 1;
+        chunks.push(
+          cache.get(lastChunkIndex)?.slice(0, lastPartialOffset) ??
+            (await fetchAndCache(lastChunkIndex, 0, lastPartialOffset)),
+        );
+      }
+
+      const result = new Uint8Array(size);
+      let resultOffset = 0;
+      for (const chunk of chunks) {
+        result.set(chunk, resultOffset);
+        resultOffset += chunk.length;
+      }
+      return result;
+    }
 
     const chunk = cache.get(chunkIndex);
     if (chunk !== null) {
