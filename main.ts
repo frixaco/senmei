@@ -30,6 +30,8 @@ ctx.configure({
   device,
   format: canvasFormat,
   alphaMode: "opaque",
+  usage:
+    GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
 });
 
 const sampler = device.createSampler({
@@ -45,9 +47,10 @@ status.textContent = "Pick an image";
 setButtonsIdleState();
 
 on("playMkv", "click", async () => {
-  const url = getElementById<HTMLInputElement>("videoUrl").value
-  await play(url)
-})
+  const url = getElementById<HTMLInputElement>("videoUrl").value;
+  canvas.classList.remove("hidden");
+  await play(url, canvas, ctx, device);
+});
 
 on("processBtn", "click", async () => {
   if (!selectedFile) {
@@ -191,7 +194,7 @@ function doWebGPU() {
     }
 
     return texture;
-  };
+  }
 }
 
 on("inputImg", "change", (event) => {

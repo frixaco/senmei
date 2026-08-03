@@ -3,28 +3,53 @@ import { parseBytesIntoFormat } from "./codec-parsers";
 import { createBackend } from "./backend";
 import { createBufferedReader, type BufferedReader } from "./buffered-reader";
 
-export async function play(url: string) {
+export async function play(
+  url: string,
+  canvas: HTMLCanvasElement,
+  ctx: GPUCanvasContext,
+  device: GPUDevice,
+) {
   const backend = await createBackend(url, "http");
   const reader = createBufferedReader(backend);
   const matroska = openMatroska(reader);
 
   const mkv = await matroska.init();
-  console.log(mkv.audios);
 
-  await playVideoChunk(mkv);
+  await playVideoChunk(mkv, canvas, ctx, device);
 }
 
-async function playVideoChunk(mkv: any) {
+async function playVideoChunk(
+  mkv: any,
+  canvas: HTMLCanvasElement,
+  ctx: GPUCanvasContext,
+  device: GPUDevice,
+) {
   const decoder = new VideoDecoder({
-    output(data) {
-      console.log(data);
+    output(frame) {
+      console.log("FRAME:", frame);
+
+      if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
+        canvas.width = frame.displayWidth;
+        canvas.height = frame.displayHeight;
+      }
+
+      device.queue.copyExternalImageToTexture(
+        { source: frame },
+        { texture: ctx.getCurrentTexture() },
+        {
+          width: frame.displayWidth,
+          height: frame.displayHeight,
+        },
+      );
+
+      frame.close();
     },
     error(err) {
       throw err;
     },
   });
 
-  const timestamp = 0 * 1_000_000;
+  const timestamp = 3;
   const chunk = await mkv.getVideoData(0, timestamp);
 
   decoder.configure({
@@ -210,7 +235,7 @@ function openMatroska(reader: BufferedReader) {
       throw new Error("Cluster does not contain a Timestamp");
     }
 
-    return { timestamp, blocks };
+    return { timestamp, blocks, end: cursor };
   }
 
   async function parseIdAt(offset: number) {
@@ -269,6 +294,7 @@ function openMatroska(reader: BufferedReader) {
       size = size * 256 + bytes[i]!;
     }
 
+    // Applies to only EBML element sizes, not TrackNumber VINT, but should be safe to re-use
     const firstByteAllOnes = (firstByte & (mask - 1)) === mask - 1;
     if (firstByteAllOnes && bytes.slice(1).every((b) => b === 0xff)) {
       return {
@@ -522,41 +548,110 @@ function openMatroska(reader: BufferedReader) {
         subtitles,
         async getVideoData(
           index: number,
-          timestamp: number = 0,
+          timestampSec: number = 0,
         ): Promise<{
           codec: string;
           description?: Uint8Array<ArrayBufferLike>;
           type: "key" | "delta";
+          data: Uint8Array<ArrayBufferLike>;
           timestamp: number;
           duration?: number;
         }> {
           const track = this.videos[index]!;
 
-          const cluster = await parseClusterAt(firstClusterOffset);
-          const firstBlock = cluster.blocks[0];
-          if (!firstBlock) {
-            throw new Error("Cluster does not contain a block");
+          const timestampScaleElement = segment.branches
+            .find((b) => b.name === "INFO")
+            ?.branches.find((b) => b.name === "TIMESTAMP_SCALE");
+          const timestampeScale = timestampScaleElement
+            ? await parseNumberAt(timestampScaleElement.dataStart, timestampScaleElement.size)
+            : 1_000_000;
+
+          const targetTimestamp = (timestampSec * 1_000_000_000) / timestampeScale;
+          let targetCluster: null | {
+            timestamp: number;
+            blocks: Element[];
+            end: number;
+          } = null;
+
+          let notFound = true;
+          let cursor = firstClusterOffset;
+          while (notFound) {
+            targetCluster = await parseClusterAt(cursor);
+            const nextCluster = await parseClusterAt(targetCluster.end);
+            if (
+              targetCluster.timestamp <= targetTimestamp &&
+              targetTimestamp < nextCluster.timestamp
+            ) {
+              notFound = false;
+            }
+
+            cursor = targetCluster.end;
           }
 
-          const frame =
-            firstBlock.name === "BLOCK_GROUP"
-              ? firstBlock.branches.find((element) => element.name === "BLOCK")
-              : firstBlock;
-          if (!frame) {
-            throw new Error("Block group does not contain a block");
+          async function parseBlock(b: Element) {
+            const { width, size: trackNumber } = await parseSizeAt(b.dataStart);
+
+            const unsigned = await parseNumberAt(b.dataStart + width, 2);
+            const relativeTimestamp = unsigned >= 0x8000 ? unsigned - 0x10000 : unsigned;
+            const flagsOffset = b.dataStart + width + 2;
+            const flagsByte = await parseNumberAt(flagsOffset, 1);
+            const lacing = (flagsByte & 0x06) >> 1;
+
+            if (lacing !== 0) return null;
+
+            return {
+              trackNumber,
+              relativeTimestamp,
+              flags: {
+                keyframe: (flagsByte & 0x80) !== 0,
+                invisible: (flagsByte & 0x08) !== 0,
+                lacing,
+                discardable: (flagsByte & 0x01) !== 0,
+              },
+              lacingMetadata: {},
+              dataRange: [flagsOffset + 1, b.end] as const,
+            };
           }
 
-          const calcTimestamp = () => 0;
+          // starting from first cluster using firstClusterOffset
+          // find the cluster with timestampSec * 1b / scale
+          // find Blocks in blockgroups or SimpleBlock with track number
+          // if block has refblock - go to that simple/block
+          // no refblock - key
+          // first few bytes - tracknumber
+          // 2 bytes - reltmsp (cluster tmsp + rel tmsp, * scale)
+          // 1 byte - flags, if bits 2-1 00 - next bytes are video bytes
+          // optional variable size lacing metadata
+          // frame data
 
-          const type = "key"; // TODO: parse flag byte
-          const duration = 0;
-          return {
-            codec: track.codecFormat.codec,
-            description: track.codecPrivate ?? undefined,
-            type,
-            timestamp: calcTimestamp(),
-            duration,
-          };
+          for (const b of targetCluster!.blocks) {
+            const block =
+              b.name === "BLOCK_GROUP" ? b.branches.find((element) => element.name === "BLOCK") : b;
+            if (!block) throw new Error("BlockGroup does not contain a Block");
+
+            const parsed = await parseBlock(block);
+            if (!parsed) continue;
+
+            if (b.name === "BLOCK_GROUP") {
+              parsed.flags.keyframe = !b.branches.some(
+                (element) => element.name === "REFERENCE_BLOCK",
+              );
+              parsed.flags.discardable = false;
+            }
+
+            const { trackNumber, relativeTimestamp, flags, dataRange } = parsed;
+            if (trackNumber !== track.number) continue;
+
+            return {
+              codec: track.codecFormat.codec,
+              description: track.codecPrivate ?? undefined,
+              type: flags.keyframe ? "key" : "delta",
+              data: await reader.read(dataRange[0], dataRange[1] - dataRange[0]),
+              timestamp: ((targetCluster!.timestamp + relativeTimestamp) * timestampeScale) / 1_000,
+            };
+          }
+
+          throw new Error("Target Cluster does not contain an unlaced video Block");
         },
       };
     },
