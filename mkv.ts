@@ -24,52 +24,113 @@ async function playVideoChunk(
   ctx: GPUCanvasContext,
   device: GPUDevice,
 ) {
+  const frames: VideoFrame[] = [];
+
+  const BUFFER_SIZE = 64;
+
+  let wakeUp = (_v?: unknown) => {};
+  const park = () =>
+    new Promise((r) => {
+      wakeUp = r;
+    });
+
   const decoder = new VideoDecoder({
-    output(frame) {
-      console.log("FRAME:", frame);
-
-      if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
-        canvas.width = frame.displayWidth;
-        canvas.height = frame.displayHeight;
-      }
-
-      device.queue.copyExternalImageToTexture(
-        { source: frame },
-        { texture: ctx.getCurrentTexture() },
-        {
-          width: frame.displayWidth,
-          height: frame.displayHeight,
-        },
-      );
-
-      frame.close();
+    output(data) {
+      frames.push(data);
     },
     error(err) {
       throw err;
     },
   });
 
-  const timestamp = 3;
-  const chunk = await mkv.getVideoData(0, timestamp);
-
+  const trackIndex = 0;
+  const track = mkv.videos[trackIndex];
   decoder.configure({
-    codec: chunk.codec,
-    description: chunk.description,
+    codec: track.codecFormat.codec,
+    description: track.codecPrivate,
   });
 
-  decoder.decode(
-    new EncodedVideoChunk({
-      type: chunk.type, // as per spec
-      data: chunk.data,
-      timestamp: chunk.timestamp,
-      duration: chunk.duration,
-    }),
-  );
+  const nextChunk = await mkv.getVideoData(trackIndex);
+
+  async function decodeQueue() {
+    while (true) {
+      while (frames.length >= BUFFER_SIZE) {
+        await park();
+      }
+
+      const chunk = (await nextChunk.next()).value;
+      if (!chunk) {
+        throw new Error("NO CHUNKS");
+      }
+
+      decoder.decode(
+        new EncodedVideoChunk({
+          type: chunk.type, // as per spec
+          data: chunk.data,
+          timestamp: chunk.timestamp,
+          duration: chunk.duration,
+        }),
+      );
+    }
+  }
+
+  decodeQueue();
+
+  // ===
+
+  const drawFrame = (frame: VideoFrame) => {
+    if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
+      canvas.width = frame.displayWidth;
+      canvas.height = frame.displayHeight;
+    }
+
+    device.queue.copyExternalImageToTexture(
+      { source: frame },
+      { texture: ctx.getCurrentTexture() },
+      {
+        width: frame.displayWidth,
+        height: frame.displayHeight,
+      },
+    );
+  };
+
+  let startedAt: number | null = null;
+
+  function render() {
+    if (frames.length === 0) {
+      console.log("BUFFER EMPTY");
+      requestAnimationFrame(render);
+      return;
+    }
+
+    let frame = frames[0]!; // frames has at least one item, see check above
+
+    if (startedAt === null) {
+      startedAt = performance.now() - frame.timestamp / 1000;
+    }
+
+    const elapsed = (performance.now() - startedAt) * 1000;
+
+    if (elapsed < frame.timestamp) {
+      requestAnimationFrame(render);
+      return;
+    }
+
+    frame = frames.shift()!;
+    console.log("FRAME", frame);
+    wakeUp();
+
+    drawFrame(frame);
+    frame.close();
+
+    requestAnimationFrame(render);
+  }
+
+  requestAnimationFrame(render);
 }
 
 export const MAX_SLOTS = 64;
-// TODO: for playback use 512
-export const CHUNK_SIZE = 32 * 1024;
+export const CHUNK_SIZE = 1024 * 1024;
 
 type Element = {
   id: number;
@@ -546,17 +607,7 @@ function openMatroska(reader: BufferedReader) {
         audios,
         videos,
         subtitles,
-        async getVideoData(
-          index: number,
-          timestampSec: number = 0,
-        ): Promise<{
-          codec: string;
-          description?: Uint8Array<ArrayBufferLike>;
-          type: "key" | "delta";
-          data: Uint8Array<ArrayBufferLike>;
-          timestamp: number;
-          duration?: number;
-        }> {
+        async *getVideoData(index: number) {
           const track = this.videos[index]!;
 
           const timestampScaleElement = segment.branches
@@ -565,28 +616,6 @@ function openMatroska(reader: BufferedReader) {
           const timestampeScale = timestampScaleElement
             ? await parseNumberAt(timestampScaleElement.dataStart, timestampScaleElement.size)
             : 1_000_000;
-
-          const targetTimestamp = (timestampSec * 1_000_000_000) / timestampeScale;
-          let targetCluster: null | {
-            timestamp: number;
-            blocks: Element[];
-            end: number;
-          } = null;
-
-          let notFound = true;
-          let cursor = firstClusterOffset;
-          while (notFound) {
-            targetCluster = await parseClusterAt(cursor);
-            const nextCluster = await parseClusterAt(targetCluster.end);
-            if (
-              targetCluster.timestamp <= targetTimestamp &&
-              targetTimestamp < nextCluster.timestamp
-            ) {
-              notFound = false;
-            }
-
-            cursor = targetCluster.end;
-          }
 
           async function parseBlock(b: Element) {
             const { width, size: trackNumber } = await parseSizeAt(b.dataStart);
@@ -613,45 +642,57 @@ function openMatroska(reader: BufferedReader) {
             };
           }
 
-          // starting from first cluster using firstClusterOffset
-          // find the cluster with timestampSec * 1b / scale
-          // find Blocks in blockgroups or SimpleBlock with track number
-          // if block has refblock - go to that simple/block
-          // no refblock - key
-          // first few bytes - tracknumber
-          // 2 bytes - reltmsp (cluster tmsp + rel tmsp, * scale)
-          // 1 byte - flags, if bits 2-1 00 - next bytes are video bytes
-          // optional variable size lacing metadata
-          // frame data
+          let cursor = firstClusterOffset;
+          let targetCluster: {
+            timestamp: number;
+            blocks: Element[];
+            end: number;
+          } = await parseClusterAt(cursor);
+          cursor = targetCluster.end;
 
-          for (const b of targetCluster!.blocks) {
-            const block =
-              b.name === "BLOCK_GROUP" ? b.branches.find((element) => element.name === "BLOCK") : b;
-            if (!block) throw new Error("BlockGroup does not contain a Block");
+          type VideoChunk = {
+            codec: string;
+            description?: Uint8Array<ArrayBufferLike>;
+            type: "key" | "delta";
+            data: Uint8Array<ArrayBufferLike>;
+            timestamp: number;
+            duration?: number;
+          };
 
-            const parsed = await parseBlock(block);
-            if (!parsed) continue;
+          while (true) {
+            for (const b of targetCluster!.blocks) {
+              const block =
+                b.name === "BLOCK_GROUP"
+                  ? b.branches.find((element) => element.name === "BLOCK")
+                  : b;
+              if (!block) throw new Error("BlockGroup does not contain a Block");
 
-            if (b.name === "BLOCK_GROUP") {
-              parsed.flags.keyframe = !b.branches.some(
-                (element) => element.name === "REFERENCE_BLOCK",
-              );
-              parsed.flags.discardable = false;
+              const parsed = await parseBlock(block);
+              if (!parsed) continue;
+
+              if (b.name === "BLOCK_GROUP") {
+                parsed.flags.keyframe = !b.branches.some(
+                  (element) => element.name === "REFERENCE_BLOCK",
+                );
+                parsed.flags.discardable = false;
+              }
+
+              const { trackNumber, relativeTimestamp, flags, dataRange } = parsed;
+              if (trackNumber !== track.number) continue;
+
+              yield {
+                codec: track.codecFormat.codec,
+                description: track.codecPrivate ?? undefined,
+                type: flags.keyframe ? "key" : "delta",
+                data: await reader.read(dataRange[0], dataRange[1] - dataRange[0]),
+                timestamp:
+                  ((targetCluster!.timestamp + relativeTimestamp) * timestampeScale) / 1_000,
+              };
             }
 
-            const { trackNumber, relativeTimestamp, flags, dataRange } = parsed;
-            if (trackNumber !== track.number) continue;
-
-            return {
-              codec: track.codecFormat.codec,
-              description: track.codecPrivate ?? undefined,
-              type: flags.keyframe ? "key" : "delta",
-              data: await reader.read(dataRange[0], dataRange[1] - dataRange[0]),
-              timestamp: ((targetCluster!.timestamp + relativeTimestamp) * timestampeScale) / 1_000,
-            };
+            targetCluster = await parseClusterAt(cursor);
+            cursor = targetCluster.end;
           }
-
-          throw new Error("Target Cluster does not contain an unlaced video Block");
         },
       };
     },
