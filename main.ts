@@ -937,8 +937,16 @@ fn encode_srgb(linear_rgb: vec3f) -> vec3f {
 fn fragment(@location(0) uv: vec2f) -> @location(0) vec4f {
   let color = textureSampleLevel(final_texture, final_sampler, uv, 0.0);
 
-  // mpv treats SDR BT.709 as BT.1886, then color-manages the result for its sRGB surface.
-  // ponytail: SDR BT.709 only, select the transfer from VideoFrame.colorSpace when HDR lands.
+  // mpv runs every SDR stream through BT.1886 (gamma 2.4) -> sRGB. I skipped
+  // that and the image looked washed out. This matches mpv.
+  //
+  // This is "assume SDR", not "assume BT.709". BT.709, BT.601, sRGB all want
+  // the same 2.4 curve here, so branching on colorSpace.transfer per-SDR would
+  // be wrong, not more correct. Only HDR wants a different curve.
+  //
+  // ponytail: SDR only. When a PQ/HLG file shows up, read the transfer from
+  // VideoFrame.colorSpace — but that also means redoing the Anime4K passes and
+  // primaries (the CNN is SDR-tuned), so this final pass alone won't be enough.
   let linear_rgb = pow(max(color.rgb, vec3f(0.0)), vec3f(2.4));
   return vec4f(encode_srgb(linear_rgb), color.a);
 }
