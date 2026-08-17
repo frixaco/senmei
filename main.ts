@@ -1,12 +1,14 @@
-import { play } from "./mkv.ts";
+import { openMatroska } from "./mkv.ts";
 import * as autoDownscalePreX2 from "./shaders/Anime4K_AutoDownscalePre_x2.ts";
 import * as autoDownscalePreX4 from "./shaders/Anime4K_AutoDownscalePre_x4.ts";
 import * as clamp from "./shaders/Anime4K_Clamp_Highlights.ts";
 import * as restoreVL from "./shaders/Anime4K_Restore_CNN_VL.ts";
 import * as upscaleX2M from "./shaders/Anime4K_Upscale_CNN_x2_M.ts";
 import * as upscaleX2VL from "./shaders/Anime4K_Upscale_CNN_x2_VL.ts";
+import { createBackend } from "./backend";
+import { createBufferedReader } from "./buffered-reader";
 
-const UPSCALE_NUMBER = 2;
+// const UPSCALE_NUMBER = 2;
 
 const original = getElementById<HTMLImageElement>("original");
 const canvas = getElementById<HTMLCanvasElement>("canvas")!;
@@ -49,8 +51,115 @@ setButtonsIdleState();
 on("playMkv", "click", async () => {
   const url = getElementById<HTMLInputElement>("videoUrl").value;
   canvas.classList.remove("hidden");
-  await play(url, canvas, ctx, device);
+  await play(url);
 });
+
+export async function play(source: string | Blob) {
+  const backend = await createBackend(source);
+  const reader = createBufferedReader(backend);
+  const matroska = openMatroska(reader);
+
+  const mkv = await matroska.init();
+
+  const frames: VideoFrame[] = [];
+
+  const BUFFER_SIZE = 64;
+
+  let wakeUp = (_v?: unknown) => {};
+  const park = () =>
+    new Promise((r) => {
+      wakeUp = r;
+    });
+
+  const decoder = new VideoDecoder({
+    output(data) {
+      frames.push(data);
+    },
+    error(err) {
+      throw err;
+    },
+  });
+
+  const trackIndex = 0;
+  const track = mkv.videos[trackIndex]!;
+  if (!track.codecPrivate) {
+    throw new Error("No codecPrivate");
+  }
+  decoder.configure({
+    codec: track.codecFormat.codec,
+    description: track.codecPrivate,
+  });
+
+  const nextChunk = mkv.getVideoData(trackIndex);
+
+  async function decodeQueue() {
+    while (true) {
+      while (frames.length >= BUFFER_SIZE) {
+        await park();
+      }
+
+      const chunk = (await nextChunk.next()).value;
+      if (!chunk) {
+        throw new Error("NO CHUNKS");
+      }
+
+      decoder.decode(
+        new EncodedVideoChunk({
+          type: chunk.type, // as per spec
+          data: chunk.data,
+          timestamp: chunk.timestamp,
+          duration: chunk.duration,
+        }),
+      );
+    }
+  }
+
+  decodeQueue();
+
+  const gpuStuff = doWebGPU();
+  const drawFrame = (frame: VideoFrame) => {
+    if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
+      canvas.width = frame.displayWidth;
+      canvas.height = frame.displayHeight;
+    }
+
+    gpuStuff(frame);
+  };
+
+  let startedAt: number | null = null;
+
+  function render() {
+    if (frames.length === 0) {
+      console.log("BUFFER EMPTY");
+      requestAnimationFrame(render);
+      return;
+    }
+
+    let frame = frames[0]!; // frames has at least one item, see check above
+
+    if (startedAt === null) {
+      startedAt = performance.now() - frame.timestamp / 1000;
+    }
+
+    const elapsed = (performance.now() - startedAt) * 1000;
+
+    if (elapsed < frame.timestamp) {
+      requestAnimationFrame(render);
+      return;
+    }
+
+    frame = frames.shift()!;
+    console.log("FRAME", frame);
+    wakeUp();
+
+    drawFrame(frame);
+    frame.close();
+
+    requestAnimationFrame(render);
+  }
+
+  requestAnimationFrame(render);
+}
 
 on("inputMkv", "change", async (event) => {
   const target = event.target;
@@ -65,153 +174,192 @@ on("inputMkv", "change", async (event) => {
 
   status.textContent = `Loading: ${file.name}`;
   canvas.classList.remove("hidden");
-  await play(file, canvas, ctx, device);
+  await play(file);
   status.textContent = `Playing: ${file.name}`;
 });
 
-on("processBtn", "click", async () => {
-  if (!selectedFile) {
-    status.textContent = "Pick an image";
-    return;
-  }
-
-  status.textContent = "Processing...";
-
-  await original.decode();
-  canvas.width = original.naturalWidth * UPSCALE_NUMBER;
-  canvas.height = original.naturalHeight * UPSCALE_NUMBER;
-
-  doWebGPU();
-
-  canvas.classList.remove("hidden");
-
-  status.textContent = `Processed ${selectedFile.name}`;
-});
+// on("processBtn", "click", async () => {
+//   if (!selectedFile) {
+//     status.textContent = "Pick an image";
+//     return;
+//   }
+//
+//   status.textContent = "Processing...";
+//
+//   await original.decode();
+//   canvas.width = original.naturalWidth * UPSCALE_NUMBER;
+//   canvas.height = original.naturalHeight * UPSCALE_NUMBER;
+//
+//   doWebGPU();
+//
+//   canvas.classList.remove("hidden");
+//
+//   status.textContent = `Processed ${selectedFile.name}`;
+// });
 
 function doWebGPU() {
   if (!ctx) throw new Error("No WebGPU canvas context");
-
-  const imageBitmap = original;
-  const sourceSize = {
-    width: imageBitmap.naturalWidth,
-    height: imageBitmap.naturalHeight,
-  };
-  const outputSize = {
-    width: canvas.width,
-    height: canvas.height,
-  };
-  const sourceTexture = device.createTexture({
-    size: sourceSize,
-    format: "rgba16float",
-    usage:
-      GPUTextureUsage.COPY_DST |
-      GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.RENDER_ATTACHMENT,
-  });
-
-  device.queue.copyExternalImageToTexture(
-    { source: imageBitmap },
-    { texture: sourceTexture, colorSpace: "srgb", premultipliedAlpha: false },
-    [imageBitmap.naturalWidth, imageBitmap.naturalHeight],
-  );
-
-  const textures = new Map<string, Texture>([
-    ["MAIN", { gpu: sourceTexture, ...sourceSize }],
-    ["NATIVE", { gpu: sourceTexture, ...sourceSize }],
-  ]);
+  const bindGroupLayoutMap = new Map<string, GPUBindGroupLayout>();
+  const passPipelineMap = new Map<string, GPURenderPipeline>();
 
   for (const pass of passes) {
-    if (
-      pass.when &&
-      !pass.when({
-        main: getTexture("MAIN"),
-        native: getTexture("NATIVE"),
-        output: outputSize,
-      })
-    ) {
-      continue;
-    }
-
-    const frameName = pass.textures[0];
-    if (!frameName) {
-      throw new Error(`Pass ${pass.name} has no binding 0 texture`);
-    }
-
-    const frameTexture = getTexture(frameName);
-    let targetSize: Size = frameTexture;
-    if (pass.size.from === "OUTPUT") {
-      targetSize = outputSize;
-    } else if (pass.size.from !== "FRAME") {
-      targetSize = getTexture(pass.size.from);
-    }
-
-    const outputTexture = createOutputTexture({
-      width: targetSize.width * pass.size.scale,
-      height: targetSize.height * pass.size.scale,
-    });
-
     // NOTE: pass.textures does not include sampler which is at index 1
     const textureBindings = Object.keys(pass.textures).map(Number);
     const bindGroupLayout = createBindGroupLayout(textureBindings);
-    const pipeline = createPipeline(pass.shader, "rgba16float", bindGroupLayout);
+    bindGroupLayoutMap.set(pass.name, bindGroupLayout);
 
-    const textureEntries = textureBindings.map((binding): GPUBindGroupEntry => {
-      const textureName = pass.textures[binding];
-      if (!textureName) {
-        throw new Error(`Pass ${pass.name} has no texture for binding ${binding}`);
-      }
-
-      return {
-        binding,
-        resource: getTexture(textureName).gpu.createView(),
-      };
-    });
-    const entries: GPUBindGroupEntry[] = [
-      {
-        binding: 1,
-        resource: sampler,
-      },
-      ...textureEntries,
-    ];
-    const bindGroup = device.createBindGroup({
-      layout: bindGroupLayout,
-      entries,
-    });
-
-    render(pipeline, bindGroup, outputTexture.gpu.createView());
-
-    if (pass.save) {
-      textures.set(pass.save, outputTexture);
-    }
+    const passPipeline = createPipeline(pass.shader, "rgba16float", bindGroupLayout!);
+    passPipelineMap.set(pass.name, passPipeline);
   }
 
   const pipeline = createPipeline(defaultFragmentShader, canvasFormat);
-  const mainTexture = getTexture("MAIN");
 
-  const bindGroup = device.createBindGroup({
-    layout: pipeline.getBindGroupLayout(0),
-    entries: [
-      {
-        binding: 0,
-        resource: mainTexture.gpu.createView(),
-      },
-      {
-        binding: 1,
-        resource: sampler,
-      },
-    ],
-  });
+  const passTextureMap = new Map<string, Texture>();
 
-  render(pipeline, bindGroup, ctx.getCurrentTexture().createView());
+  let sourceTexture: GPUTexture | null = null;
 
-  function getTexture(name: string): Texture {
-    const texture = textures.get(name);
-    if (!texture) {
-      throw new Error(`Pass ${name} has not been produced yet`);
+  return (original: VideoFrame) => {
+    const imageBitmap = original;
+    const sourceSize = {
+      width: imageBitmap.displayWidth,
+      height: imageBitmap.displayHeight,
+    };
+    const outputSize = {
+      width: canvas.width,
+      height: canvas.height,
+    };
+
+    const targetWidth = sourceSize.width;
+    const targetHeight = sourceSize.height;
+    if (
+      !sourceTexture ||
+      sourceTexture.width !== targetWidth ||
+      sourceTexture.height !== targetHeight
+    ) {
+      sourceTexture = device.createTexture({
+        size: sourceSize,
+        format: "rgba16float",
+        usage:
+          GPUTextureUsage.COPY_DST |
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.RENDER_ATTACHMENT,
+      });
     }
 
-    return texture;
-  }
+    device.queue.copyExternalImageToTexture(
+      { source: imageBitmap },
+      { texture: sourceTexture, colorSpace: "srgb", premultipliedAlpha: false },
+      [imageBitmap.displayWidth, imageBitmap.displayHeight],
+    );
+
+    const textures = new Map<string, Texture>([
+      ["MAIN", { gpu: sourceTexture, ...sourceSize }],
+      ["NATIVE", { gpu: sourceTexture, ...sourceSize }],
+    ]);
+
+    function getTexture(name: string): Texture {
+      const texture = textures.get(name);
+      if (!texture) {
+        throw new Error(`Pass ${name} has not been produced yet`);
+      }
+
+      return texture;
+    }
+
+    for (const pass of passes) {
+      if (
+        pass.when &&
+        !pass.when({
+          main: getTexture("MAIN"),
+          native: getTexture("NATIVE"),
+          output: outputSize,
+        })
+      ) {
+        continue;
+      }
+
+      const frameName = pass.textures[0];
+      if (!frameName) {
+        throw new Error(`Pass ${pass.name} has no binding 0 texture`);
+      }
+
+      const frameTexture = getTexture(frameName);
+      let targetSize: Size = frameTexture;
+      if (pass.size.from === "OUTPUT") {
+        targetSize = outputSize;
+      } else if (pass.size.from !== "FRAME") {
+        targetSize = getTexture(pass.size.from);
+      }
+
+      let outputTexture = passTextureMap.get(pass.name);
+      const targetWidth = targetSize.width * pass.size.scale;
+      const targetHeight = targetSize.height * pass.size.scale;
+      if (
+        !outputTexture ||
+        outputTexture.width !== targetWidth ||
+        outputTexture.height !== targetHeight
+      ) {
+        outputTexture = createOutputTexture({
+          width: targetWidth,
+          height: targetHeight,
+        });
+        passTextureMap.set(pass.name, outputTexture);
+      }
+
+      const textureBindings = Object.keys(pass.textures).map(Number);
+
+      const textureEntries = textureBindings.map((binding): GPUBindGroupEntry => {
+        const textureName = pass.textures[binding];
+        if (!textureName) {
+          throw new Error(`Pass ${pass.name} has no texture for binding ${binding}`);
+        }
+
+        return {
+          binding,
+          resource: getTexture(textureName).gpu.createView(),
+        };
+      });
+
+      const entries: GPUBindGroupEntry[] = [
+        {
+          binding: 1,
+          resource: sampler,
+        },
+        ...textureEntries,
+      ];
+
+      const bindGroupLayout = bindGroupLayoutMap.get(pass.name)!;
+      const passPipeline = passPipelineMap.get(pass.name)!;
+      const bindGroup = device.createBindGroup({
+        layout: bindGroupLayout!,
+        entries,
+      });
+
+      render(passPipeline, bindGroup, outputTexture.gpu.createView());
+
+      if (pass.save) {
+        textures.set(pass.save, outputTexture);
+      }
+    }
+
+    const mainTexture = getTexture("MAIN");
+
+    const bindGroup = device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [
+        {
+          binding: 0,
+          resource: mainTexture.gpu.createView(),
+        },
+        {
+          binding: 1,
+          resource: sampler,
+        },
+      ],
+    });
+
+    render(pipeline, bindGroup, ctx.getCurrentTexture().createView());
+  };
 }
 
 on("inputImg", "change", (event) => {

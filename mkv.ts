@@ -1,133 +1,6 @@
 import { ELEMENT_INFO, LEVEL_0_AND_1_ELEMENT_IDS, TRACK_TYPE, type ElementName } from "./constants";
 import { parseBytesIntoFormat } from "./codec-parsers";
-import { createBackend } from "./backend";
-import { createBufferedReader, type BufferedReader } from "./buffered-reader";
-
-export async function play(
-  source: string | Blob,
-  canvas: HTMLCanvasElement,
-  ctx: GPUCanvasContext,
-  device: GPUDevice,
-) {
-  const backend = await createBackend(source);
-  const reader = createBufferedReader(backend);
-  const matroska = openMatroska(reader);
-
-  const mkv = await matroska.init();
-
-  await playVideoChunk(mkv, canvas, ctx, device);
-}
-
-async function playVideoChunk(
-  mkv: any,
-  canvas: HTMLCanvasElement,
-  ctx: GPUCanvasContext,
-  device: GPUDevice,
-) {
-  const frames: VideoFrame[] = [];
-
-  const BUFFER_SIZE = 64;
-
-  let wakeUp = (_v?: unknown) => {};
-  const park = () =>
-    new Promise((r) => {
-      wakeUp = r;
-    });
-
-  const decoder = new VideoDecoder({
-    output(data) {
-      frames.push(data);
-    },
-    error(err) {
-      throw err;
-    },
-  });
-
-  const trackIndex = 0;
-  const track = mkv.videos[trackIndex];
-  decoder.configure({
-    codec: track.codecFormat.codec,
-    description: track.codecPrivate,
-  });
-
-  const nextChunk = await mkv.getVideoData(trackIndex);
-
-  async function decodeQueue() {
-    while (true) {
-      while (frames.length >= BUFFER_SIZE) {
-        await park();
-      }
-
-      const chunk = (await nextChunk.next()).value;
-      if (!chunk) {
-        throw new Error("NO CHUNKS");
-      }
-
-      decoder.decode(
-        new EncodedVideoChunk({
-          type: chunk.type, // as per spec
-          data: chunk.data,
-          timestamp: chunk.timestamp,
-          duration: chunk.duration,
-        }),
-      );
-    }
-  }
-
-  decodeQueue();
-
-  // ===
-
-  const drawFrame = (frame: VideoFrame) => {
-    if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
-      canvas.width = frame.displayWidth;
-      canvas.height = frame.displayHeight;
-    }
-
-    device.queue.copyExternalImageToTexture(
-      { source: frame },
-      { texture: ctx.getCurrentTexture() },
-      {
-        width: frame.displayWidth,
-        height: frame.displayHeight,
-      },
-    );
-  };
-
-  let startedAt: number | null = null;
-
-  function render() {
-    if (frames.length === 0) {
-      console.log("BUFFER EMPTY");
-      requestAnimationFrame(render);
-      return;
-    }
-
-    let frame = frames[0]!; // frames has at least one item, see check above
-
-    if (startedAt === null) {
-      startedAt = performance.now() - frame.timestamp / 1000;
-    }
-
-    const elapsed = (performance.now() - startedAt) * 1000;
-
-    if (elapsed < frame.timestamp) {
-      requestAnimationFrame(render);
-      return;
-    }
-
-    frame = frames.shift()!;
-    console.log("FRAME", frame);
-    wakeUp();
-
-    drawFrame(frame);
-    frame.close();
-
-    requestAnimationFrame(render);
-  }
-
-  requestAnimationFrame(render);
-}
+import { type BufferedReader } from "./buffered-reader";
 
 export const MAX_SLOTS = 64;
 export const CHUNK_SIZE = 1024 * 1024;
@@ -142,7 +15,7 @@ type Element = {
   branches: Element[];
 };
 
-function openMatroska(reader: BufferedReader) {
+export function openMatroska(reader: BufferedReader) {
   let firstClusterOffset = 0;
 
   async function parseElement(cursor: number): Promise<Element> {
@@ -687,7 +560,7 @@ function openMatroska(reader: BufferedReader) {
                 data: await reader.read(dataRange[0], dataRange[1] - dataRange[0]),
                 timestamp:
                   ((targetCluster!.timestamp + relativeTimestamp) * timestampeScale) / 1_000,
-              };
+              } as VideoChunk;
             }
 
             targetCluster = await parseClusterAt(cursor);
