@@ -24,7 +24,12 @@ const saveBtn = getElementById<HTMLButtonElement>("saveBtn");
 
 const adapter = await navigator.gpu.requestAdapter();
 if (!adapter) throw new Error("no gpu adapter");
-const device = await adapter.requestDevice();
+if (!adapter.features.has("shader-f16")) {
+  throw new Error("GPU does not support shader-f16 (f16 shader math)");
+}
+const device = await adapter.requestDevice({
+  requiredFeatures: ["shader-f16"],
+});
 
 const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
 if (!ctx) throw new Error("No WebGPU canvas context");
