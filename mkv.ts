@@ -4,12 +4,12 @@ import { createBackend } from "./backend";
 import { createBufferedReader, type BufferedReader } from "./buffered-reader";
 
 export async function play(
-  url: string,
+  source: string | Blob,
   canvas: HTMLCanvasElement,
   ctx: GPUCanvasContext,
   device: GPUDevice,
 ) {
-  const backend = await createBackend(url, "http");
+  const backend = await createBackend(source);
   const reader = createBufferedReader(backend);
   const matroska = openMatroska(reader);
 

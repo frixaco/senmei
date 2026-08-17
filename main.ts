@@ -52,6 +52,23 @@ on("playMkv", "click", async () => {
   await play(url, canvas, ctx, device);
 });
 
+on("inputMkv", "change", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const file = target.files?.[0] ?? null;
+  if (!file) {
+    return;
+  }
+
+  status.textContent = `Loading: ${file.name}`;
+  canvas.classList.remove("hidden");
+  await play(file, canvas, ctx, device);
+  status.textContent = `Playing: ${file.name}`;
+});
+
 on("processBtn", "click", async () => {
   if (!selectedFile) {
     status.textContent = "Pick an image";
