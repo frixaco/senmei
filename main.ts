@@ -31,6 +31,7 @@ if (!ctx) throw new Error("No WebGPU canvas context");
 ctx.configure({
   device,
   format: canvasFormat,
+  colorSpace: "srgb",
   alphaMode: "opaque",
   usage:
     GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -905,9 +906,20 @@ const defaultFragmentShader = `
 @group(0) @binding(0) var final_texture: texture_2d<f32>;
 @group(0) @binding(1) var final_sampler: sampler;
 
+fn encode_srgb(linear_rgb: vec3f) -> vec3f {
+  let linear_segment = linear_rgb * 12.92;
+  let power_segment = 1.055 * pow(linear_rgb, vec3f(1.0 / 2.4)) - 0.055;
+  return select(linear_segment, power_segment, linear_rgb > vec3f(0.0031308));
+}
+
 @fragment
 fn fragment(@location(0) uv: vec2f) -> @location(0) vec4f {
-  return textureSampleLevel(final_texture, final_sampler, uv, 0.0);
+  let color = textureSampleLevel(final_texture, final_sampler, uv, 0.0);
+
+  // mpv treats SDR BT.709 as BT.1886, then color-manages the result for its sRGB surface.
+  // ponytail: SDR BT.709 only, select the transfer from VideoFrame.colorSpace when HDR lands.
+  let linear_rgb = pow(max(color.rgb, vec3f(0.0)), vec3f(2.4));
+  return vec4f(encode_srgb(linear_rgb), color.a);
 }
 `;
 
