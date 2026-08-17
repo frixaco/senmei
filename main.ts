@@ -8,7 +8,7 @@ import * as upscaleX2VL from "./shaders/Anime4K_Upscale_CNN_x2_VL.ts";
 import { createBackend } from "./backend";
 import { createBufferedReader } from "./buffered-reader";
 
-// const UPSCALE_NUMBER = 2;
+const UPSCALE_NUMBER = 2;
 
 const original = getElementById<HTMLImageElement>("original");
 const canvas = getElementById<HTMLCanvasElement>("canvas")!;
@@ -119,9 +119,11 @@ export async function play(source: string | Blob) {
 
   const gpuStuff = doWebGPU();
   const drawFrame = (frame: VideoFrame) => {
-    if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
-      canvas.width = frame.displayWidth;
-      canvas.height = frame.displayHeight;
+    const targetWidth = frame.displayWidth * UPSCALE_NUMBER;
+    const targetHeight = frame.displayHeight * UPSCALE_NUMBER;
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
     }
 
     gpuStuff(frame);
@@ -131,7 +133,6 @@ export async function play(source: string | Blob) {
 
   function render() {
     if (frames.length === 0) {
-      console.log("BUFFER EMPTY");
       requestAnimationFrame(render);
       return;
     }
@@ -150,7 +151,6 @@ export async function play(source: string | Blob) {
     }
 
     frame = frames.shift()!;
-    console.log("FRAME", frame);
     wakeUp();
 
     drawFrame(frame);
