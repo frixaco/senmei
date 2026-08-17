@@ -216,8 +216,10 @@ function doWebGPU() {
   const pipeline = createPipeline(defaultFragmentShader, canvasFormat);
 
   const passTextureMap = new Map<string, Texture>();
+  const passBindGroupMap = new Map<string, GPUBindGroup>();
 
-  let sourceTexture: GPUTexture | null = null;
+  let sourceTexture: Texture | null = null;
+  let finalBindGroup: GPUBindGroup | null = null;
 
   return (original: VideoFrame) => {
     const imageBitmap = original;
@@ -237,7 +239,7 @@ function doWebGPU() {
       sourceTexture.width !== targetWidth ||
       sourceTexture.height !== targetHeight
     ) {
-      sourceTexture = device.createTexture({
+      const gpu = device.createTexture({
         size: sourceSize,
         format: "rgba16float",
         usage:
@@ -245,17 +247,20 @@ function doWebGPU() {
           GPUTextureUsage.TEXTURE_BINDING |
           GPUTextureUsage.RENDER_ATTACHMENT,
       });
+      sourceTexture = { gpu, view: gpu.createView(), ...sourceSize };
+      passBindGroupMap.clear();
+      finalBindGroup = null;
     }
 
     device.queue.copyExternalImageToTexture(
       { source: imageBitmap },
-      { texture: sourceTexture, colorSpace: "srgb", premultipliedAlpha: false },
+      { texture: sourceTexture.gpu, colorSpace: "srgb", premultipliedAlpha: false },
       [imageBitmap.displayWidth, imageBitmap.displayHeight],
     );
 
     const textures = new Map<string, Texture>([
-      ["MAIN", { gpu: sourceTexture, ...sourceSize }],
-      ["NATIVE", { gpu: sourceTexture, ...sourceSize }],
+      ["MAIN", sourceTexture],
+      ["NATIVE", sourceTexture],
     ]);
 
     function getTexture(name: string): Texture {
@@ -307,38 +312,44 @@ function doWebGPU() {
           height: targetHeight,
         });
         passTextureMap.set(pass.name, outputTexture);
+        passBindGroupMap.clear();
+        finalBindGroup = null;
       }
 
-      const textureBindings = Object.keys(pass.textures).map(Number);
-
-      const textureEntries = textureBindings.map((binding): GPUBindGroupEntry => {
-        const textureName = pass.textures[binding];
-        if (!textureName) {
-          throw new Error(`Pass ${pass.name} has no texture for binding ${binding}`);
-        }
-
-        return {
-          binding,
-          resource: getTexture(textureName).gpu.createView(),
-        };
-      });
-
-      const entries: GPUBindGroupEntry[] = [
-        {
-          binding: 1,
-          resource: sampler,
-        },
-        ...textureEntries,
-      ];
-
-      const bindGroupLayout = bindGroupLayoutMap.get(pass.name)!;
       const passPipeline = passPipelineMap.get(pass.name)!;
-      const bindGroup = device.createBindGroup({
-        layout: bindGroupLayout!,
-        entries,
-      });
 
-      addPass(encoder, passPipeline, bindGroup, outputTexture.gpu.createView());
+      let bindGroup = passBindGroupMap.get(pass.name);
+      if (!bindGroup) {
+        const textureBindings = Object.keys(pass.textures).map(Number);
+
+        const textureEntries = textureBindings.map((binding): GPUBindGroupEntry => {
+          const textureName = pass.textures[binding];
+          if (!textureName) {
+            throw new Error(`Pass ${pass.name} has no texture for binding ${binding}`);
+          }
+
+          return {
+            binding,
+            resource: getTexture(textureName).view,
+          };
+        });
+
+        const entries: GPUBindGroupEntry[] = [
+          {
+            binding: 1,
+            resource: sampler,
+          },
+          ...textureEntries,
+        ];
+
+        bindGroup = device.createBindGroup({
+          layout: bindGroupLayoutMap.get(pass.name)!,
+          entries,
+        });
+        passBindGroupMap.set(pass.name, bindGroup);
+      }
+
+      addPass(encoder, passPipeline, bindGroup, outputTexture.view);
 
       if (pass.save) {
         textures.set(pass.save, outputTexture);
@@ -347,21 +358,23 @@ function doWebGPU() {
 
     const mainTexture = getTexture("MAIN");
 
-    const bindGroup = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [
-        {
-          binding: 0,
-          resource: mainTexture.gpu.createView(),
-        },
-        {
-          binding: 1,
-          resource: sampler,
-        },
-      ],
-    });
+    if (!finalBindGroup) {
+      finalBindGroup = device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [
+          {
+            binding: 0,
+            resource: mainTexture.view,
+          },
+          {
+            binding: 1,
+            resource: sampler,
+          },
+        ],
+      });
+    }
 
-    addPass(encoder, pipeline, bindGroup, ctx.getCurrentTexture().createView());
+    addPass(encoder, pipeline, finalBindGroup, ctx.getCurrentTexture().createView());
     device.queue.submit([encoder.finish()]);
   };
 }
@@ -927,15 +940,18 @@ fn fragment(@location(0) uv: vec2f) -> @location(0) vec4f {
 `;
 
 function createOutputTexture(size: Size): Texture {
+  const gpu = device.createTexture({
+    size,
+    format: "rgba16float",
+    usage:
+      GPUTextureUsage.COPY_DST |
+      GPUTextureUsage.TEXTURE_BINDING |
+      GPUTextureUsage.RENDER_ATTACHMENT,
+  });
+
   return {
-    gpu: device.createTexture({
-      size,
-      format: "rgba16float",
-      usage:
-        GPUTextureUsage.COPY_DST |
-        GPUTextureUsage.TEXTURE_BINDING |
-        GPUTextureUsage.RENDER_ATTACHMENT,
-    }),
+    gpu,
+    view: gpu.createView(),
     ...size,
   };
 }
@@ -1041,6 +1057,7 @@ type Size = {
 
 type Texture = Size & {
   gpu: GPUTexture;
+  view: GPUTextureView;
 };
 
 type PassSizes = {
