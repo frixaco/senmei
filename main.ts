@@ -267,6 +267,8 @@ function doWebGPU() {
       return texture;
     }
 
+    const encoder = device.createCommandEncoder();
+
     for (const pass of passes) {
       if (
         pass.when &&
@@ -336,7 +338,7 @@ function doWebGPU() {
         entries,
       });
 
-      render(passPipeline, bindGroup, outputTexture.gpu.createView());
+      addPass(encoder, passPipeline, bindGroup, outputTexture.gpu.createView());
 
       if (pass.save) {
         textures.set(pass.save, outputTexture);
@@ -359,7 +361,8 @@ function doWebGPU() {
       ],
     });
 
-    render(pipeline, bindGroup, ctx.getCurrentTexture().createView());
+    addPass(encoder, pipeline, bindGroup, ctx.getCurrentTexture().createView());
+    device.queue.submit([encoder.finish()]);
   };
 }
 
@@ -980,8 +983,12 @@ function createBindGroupLayout(textureBindings: number[]): GPUBindGroupLayout {
   return device.createBindGroupLayout({ entries });
 }
 
-function render(pipeline: GPURenderPipeline, bindGroup: GPUBindGroup, target: GPUTextureView) {
-  const encoder = device.createCommandEncoder();
+function addPass(
+  encoder: GPUCommandEncoder,
+  pipeline: GPURenderPipeline,
+  bindGroup: GPUBindGroup,
+  target: GPUTextureView,
+) {
   const renderPass = encoder.beginRenderPass({
     colorAttachments: [
       {
@@ -997,8 +1004,6 @@ function render(pipeline: GPURenderPipeline, bindGroup: GPUBindGroup, target: GP
   renderPass.setBindGroup(0, bindGroup);
   renderPass.draw(3);
   renderPass.end();
-
-  device.queue.submit([encoder.finish()]);
 }
 
 function getElementById<T extends HTMLElement>(id: string): T {
