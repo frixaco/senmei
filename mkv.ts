@@ -480,6 +480,95 @@ export function openMatroska(reader: BufferedReader) {
         audios,
         videos,
         subtitles,
+
+        async *getAudioData(index: number) {
+          const track = this.audios[index]!;
+
+          const timestampScaleElement = segment.branches
+            .find((b) => b.name === "INFO")
+            ?.branches.find((b) => b.name === "TIMESTAMP_SCALE");
+          const timestampeScale = timestampScaleElement
+            ? await parseNumberAt(timestampScaleElement.dataStart, timestampScaleElement.size)
+            : 1_000_000;
+
+          async function parseBlock(b: Element) {
+            const { width, size: trackNumber } = await parseSizeAt(b.dataStart);
+
+            const unsigned = await parseNumberAt(b.dataStart + width, 2);
+            const relativeTimestamp = unsigned >= 0x8000 ? unsigned - 0x10000 : unsigned;
+            const flagsOffset = b.dataStart + width + 2;
+            const flagsByte = await parseNumberAt(flagsOffset, 1);
+            const lacing = (flagsByte & 0x06) >> 1;
+
+            if (lacing !== 0) return null;
+
+            return {
+              trackNumber,
+              relativeTimestamp,
+              flags: {
+                keyframe: (flagsByte & 0x80) !== 0,
+                invisible: (flagsByte & 0x08) !== 0,
+                lacing,
+                discardable: (flagsByte & 0x01) !== 0,
+              },
+              lacingMetadata: {},
+              dataRange: [flagsOffset + 1, b.end] as const,
+            };
+          }
+
+          let cursor = firstClusterOffset;
+          let targetCluster: {
+            timestamp: number;
+            blocks: Element[];
+            end: number;
+          } = await parseClusterAt(cursor);
+          cursor = targetCluster.end;
+
+          type AudioChunk = {
+            codec: string;
+            description?: Uint8Array<ArrayBufferLike>;
+            type: "key" | "delta";
+            data: Uint8Array<ArrayBufferLike>;
+            timestamp: number;
+            duration?: number;
+          };
+
+          while (true) {
+            for (const b of targetCluster!.blocks) {
+              const block =
+                b.name === "BLOCK_GROUP"
+                  ? b.branches.find((element) => element.name === "BLOCK")
+                  : b;
+              if (!block) throw new Error("BlockGroup does not contain a Block");
+
+              const parsed = await parseBlock(block);
+              if (!parsed) continue;
+
+              if (b.name === "BLOCK_GROUP") {
+                parsed.flags.keyframe = !b.branches.some(
+                  (element) => element.name === "REFERENCE_BLOCK",
+                );
+                parsed.flags.discardable = false;
+              }
+
+              const { trackNumber, relativeTimestamp, flags, dataRange } = parsed;
+              if (trackNumber !== track.number) continue;
+
+              yield {
+                codec: track.codecFormat.codec,
+                description: track.codecPrivate ?? undefined,
+                type: flags.keyframe ? "key" : "delta",
+                data: await reader.read(dataRange[0], dataRange[1] - dataRange[0]),
+                timestamp:
+                  ((targetCluster!.timestamp + relativeTimestamp) * timestampeScale) / 1_000,
+              } as AudioChunk;
+            }
+
+            targetCluster = await parseClusterAt(cursor);
+            cursor = targetCluster.end;
+          }
+        },
+
         async *getVideoData(index: number) {
           const track = this.videos[index]!;
 
