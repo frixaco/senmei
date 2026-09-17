@@ -14,3 +14,64 @@
     box-sizing: border-box;
   }
 }
+
+#comparison {
+  --split: 50%;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: black;
+}
+
+/* Clip full-size layers, so moving the divider never resizes either frame. */
+.comparison-viewport {
+  position: absolute;
+  inset: 0;
+}
+
+#originalViewport {
+  clip-path: inset(0 calc(100% - var(--split)) 0 0);
+}
+
+#upscaledViewport {
+  clip-path: inset(0 0 0 var(--split));
+}
+
+.comparison-viewport > canvas,
+.comparison-viewport > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+#original:not([src]) {
+  display: none;
+}
+
+#comparisonDivider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--split);
+  width: 24px;
+  transform: translateX(-50%);
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+#comparisonDivider::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: 1px;
+  background: rgb(255 255 255 / 25%);
+}
+
+#comparisonDivider:focus-visible {
+  outline: 2px solid white;
+  outline-offset: -2px;
+}

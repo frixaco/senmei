@@ -13,6 +13,9 @@ const UPSCALE_NUMBER = 2;
 const original = getElementById<HTMLImageElement>("original");
 const canvas = getElementById<HTMLCanvasElement>("canvas")!;
 const ctx = canvas.getContext("webgpu");
+const originalVideo = getElementById<HTMLCanvasElement>("originalVideo");
+const originalVideoContext = originalVideo.getContext("2d");
+if (!originalVideoContext) throw new Error("No original video canvas context");
 
 const status = getElementById<HTMLElement>("status");
 const benchmarkPopup = getElementById<HTMLElement>("benchmarkPopup");
@@ -21,6 +24,53 @@ const benchmarkCloseBtn = getElementById<HTMLButtonElement>("benchmarkCloseBtn")
 const processBtn = getElementById<HTMLButtonElement>("processBtn");
 const benchmarkBtn = getElementById<HTMLButtonElement>("benchmarkBtn");
 const saveBtn = getElementById<HTMLButtonElement>("saveBtn");
+
+const comparison = getElementById<HTMLElement>("comparison");
+const divider = getElementById<HTMLButtonElement>("comparisonDivider");
+let split = 50;
+
+function setSplit(value: number) {
+  split = Math.max(0, Math.min(100, value));
+  comparison.style.setProperty("--split", `${split}%`);
+  divider.setAttribute("aria-valuenow", String(Math.round(split)));
+  divider.setAttribute(
+    "aria-valuetext",
+    `${Math.round(split)}% original, ${Math.round(100 - split)}% upscaled`,
+  );
+}
+
+divider.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  divider.setPointerCapture(event.pointerId);
+});
+divider.addEventListener("pointermove", (event) => {
+  if (!divider.hasPointerCapture(event.pointerId)) return;
+  const bounds = comparison.getBoundingClientRect();
+  if (bounds.width > 0) setSplit(((event.clientX - bounds.left) / bounds.width) * 100);
+});
+divider.addEventListener("pointerup", (event) => {
+  if (divider.hasPointerCapture(event.pointerId)) divider.releasePointerCapture(event.pointerId);
+});
+divider.addEventListener("keydown", (event) => {
+  const step = event.shiftKey ? 10 : 1;
+  switch (event.key) {
+    case "ArrowLeft":
+      setSplit(split - step);
+      break;
+    case "ArrowRight":
+      setSplit(split + step);
+      break;
+    case "Home":
+      setSplit(0);
+      break;
+    case "End":
+      setSplit(100);
+      break;
+    default:
+      return;
+  }
+  event.preventDefault();
+});
 
 const adapter = await navigator.gpu.requestAdapter();
 if (!adapter) throw new Error("no gpu adapter");
@@ -66,7 +116,14 @@ export async function play(source: string | Blob) {
   const matroska = openMatroska(reader);
 
   const mkv = await matroska.init();
+  playVideo(mkv);
+  status.textContent = "Playing video";
+  // Audio playback is still being developed. Enable this call to test it.
+  // await playAudio(mkv);
+}
 
+// eslint-disable-next-line no-unused-vars -- Audio work is kept here for manual testing.
+async function playAudio(mkv: Awaited<ReturnType<ReturnType<typeof openMatroska>["init"]>>) {
   const audio = new AudioContext();
   await audio.resume();
 
@@ -147,112 +204,117 @@ export async function play(source: string | Blob) {
   decodeQueue();
 }
 
-// export async function play(source: string | Blob) {
-//   const backend = await createBackend(source);
-//   const reader = createBufferedReader(backend);
-//   const matroska = openMatroska(reader);
-//
-//   const mkv = await matroska.init();
-//
-//   const frames: VideoFrame[] = [];
-//
-//   const BUFFER_SIZE = 64;
-//
-//   let wakeUp = (_v?: unknown) => {};
-//   const park = () =>
-//     new Promise((r) => {
-//       wakeUp = r;
-//     });
-//
-//   const decoder = new VideoDecoder({
-//     output(data) {
-//       frames.push(data);
-//     },
-//     error(err) {
-//       throw err;
-//     },
-//   });
-//
-//   const trackIndex = 0;
-//   const track = mkv.videos[trackIndex]!;
-//   if (!track.codecPrivate) {
-//     throw new Error("No codecPrivate");
-//   }
-//   decoder.configure({
-//     codec: track.codecFormat.codec,
-//     description: track.codecPrivate,
-//   });
-//
-//   const nextChunk = mkv.getVideoData(trackIndex);
-//
-//   async function decodeQueue() {
-//     while (true) {
-//       while (frames.length >= BUFFER_SIZE) {
-//         await park();
-//       }
-//
-//       const chunk = (await nextChunk.next()).value;
-//       if (!chunk) {
-//         throw new Error("NO CHUNKS");
-//       }
-//
-//       decoder.decode(
-//         new EncodedVideoChunk({
-//           type: chunk.type, // as per spec
-//           data: chunk.data,
-//           timestamp: chunk.timestamp,
-//           duration: chunk.duration,
-//         }),
-//       );
-//     }
-//   }
-//
-//   decodeQueue();
-//
-//   const gpuStuff = doWebGPU();
-//   const drawFrame = (frame: VideoFrame) => {
-//     const targetWidth = frame.displayWidth * UPSCALE_NUMBER;
-//     const targetHeight = frame.displayHeight * UPSCALE_NUMBER;
-//     if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-//       canvas.width = targetWidth;
-//       canvas.height = targetHeight;
-//     }
-//
-//     gpuStuff(frame);
-//   };
-//
-//   let startedAt: number | null = null;
-//
-//   function render() {
-//     if (frames.length === 0) {
-//       requestAnimationFrame(render);
-//       return;
-//     }
-//
-//     let frame = frames[0]!; // frames has at least one item, see check above
-//
-//     if (startedAt === null) {
-//       startedAt = performance.now() - frame.timestamp / 1000;
-//     }
-//
-//     const elapsed = (performance.now() - startedAt) * 1000;
-//
-//     if (elapsed < frame.timestamp) {
-//       requestAnimationFrame(render);
-//       return;
-//     }
-//
-//     frame = frames.shift()!;
-//     wakeUp();
-//
-//     drawFrame(frame);
-//     frame.close();
-//
-//     requestAnimationFrame(render);
-//   }
-//
-//   requestAnimationFrame(render);
-// }
+// Both views use the same frame before it is released. Decode only once.
+function playVideo(mkv: Awaited<ReturnType<ReturnType<typeof openMatroska>["init"]>>) {
+  const frames: VideoFrame[] = [];
+
+  const BUFFER_SIZE = 64;
+
+  let wakeUp = (_v?: unknown) => {};
+  const park = () =>
+    new Promise((r) => {
+      wakeUp = r;
+    });
+
+  const decoder = new VideoDecoder({
+    output(data) {
+      frames.push(data);
+    },
+    error(err) {
+      throw err;
+    },
+  });
+
+  const trackIndex = 0;
+  const track = mkv.videos[trackIndex]!;
+  if (!track.codecPrivate) {
+    throw new Error("No codecPrivate");
+  }
+  decoder.configure({
+    codec: track.codecFormat.codec,
+    description: track.codecPrivate,
+  });
+
+  const nextChunk = mkv.getVideoData(trackIndex);
+
+  async function decodeQueue() {
+    while (true) {
+      while (frames.length >= BUFFER_SIZE) {
+        await park();
+      }
+
+      const chunk = (await nextChunk.next()).value;
+      if (!chunk) {
+        throw new Error("NO CHUNKS");
+      }
+
+      decoder.decode(
+        new EncodedVideoChunk({
+          type: chunk.type, // as per spec
+          data: chunk.data,
+          timestamp: chunk.timestamp,
+          duration: chunk.duration,
+        }),
+      );
+    }
+  }
+
+  original.classList.add("hidden");
+  originalVideo.classList.remove("hidden");
+  canvas.classList.remove("hidden");
+  decodeQueue();
+
+  const gpuStuff = doWebGPU();
+  const drawFrame = (frame: VideoFrame) => {
+    const targetWidth = frame.displayWidth * UPSCALE_NUMBER;
+    const targetHeight = frame.displayHeight * UPSCALE_NUMBER;
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      originalVideo.width = frame.displayWidth;
+      originalVideo.height = frame.displayHeight;
+      getElementById<HTMLElement>("originalLabel").textContent =
+        `Original · ${frame.displayWidth}×${frame.displayHeight} · no Anime4K`;
+      getElementById<HTMLElement>("upscaledLabel").textContent =
+        `Anime4K · ${canvas.width}×${canvas.height}`;
+    }
+
+    originalVideoContext!.drawImage(frame, 0, 0);
+    gpuStuff(frame);
+  };
+
+  let startedAt: number | null = null;
+
+  function render() {
+    if (frames.length === 0) {
+      requestAnimationFrame(render);
+      return;
+    }
+
+    let frame = frames[0]!; // frames has at least one item, see check above
+
+    if (startedAt === null) {
+      startedAt = performance.now() - frame.timestamp / 1000;
+    }
+
+    const elapsed = (performance.now() - startedAt) * 1000;
+
+    if (elapsed < frame.timestamp) {
+      requestAnimationFrame(render);
+      return;
+    }
+
+    frame = frames.shift()!;
+    wakeUp();
+
+    drawFrame(frame);
+    frame.close();
+
+    requestAnimationFrame(render);
+  }
+
+  requestAnimationFrame(render);
+}
 
 on("inputMkv", "change", async (event) => {
   const target = event.target;

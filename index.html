@@ -8,8 +8,8 @@
   </head>
 
   <body class="min-h-dvh text-foreground bg-gray-800">
-    <main class="flex flex-col gap-2 p-2">
-      <section class="flex items-center justify-start gap-2 flex-wrap">
+    <main class="flex h-dvh flex-col gap-2 p-2">
+      <section class="flex shrink-0 items-center justify-start gap-2 flex-wrap">
         <button id="playMkv" class="px-3 border border-gray-500 disabled:opacity-50">Play</button>
         <input
           class="min-w-80 flex-1 px-3 border border-gray-500"
@@ -49,20 +49,30 @@
         </div>
       </section>
 
-      <section class="flex flex-col gap-2">
-        <div id="comparison" class="group relative aspect-video w-full overflow-hidden">
-          <img
-            id="original"
-            class="absolute inset-0 h-full w-full object-fill"
-            alt="Original source preview"
-          />
-          <canvas id="canvas" class="absolute inset-0 hidden h-full w-full object-fill"></canvas>
-          <div
-            id="comparisonEmpty"
-            class="absolute inset-x-3 bottom-3 p-2 group-has-[#original[src]]:hidden sm:inset-x-auto sm:left-3"
-          >
-            <strong class="block text-sm">No image loaded</strong>
+      <section class="flex min-h-0 flex-1 flex-col">
+        <div class="flex justify-between gap-2 text-sm">
+          <span id="originalLabel">Original · no Anime4K</span>
+          <span id="upscaledLabel">Anime4K · 2×</span>
+        </div>
+        <div id="comparison">
+          <div id="originalViewport" class="comparison-viewport" aria-label="Original video view">
+            <img id="original" alt="Original source preview" />
+            <canvas id="originalVideo" class="hidden" aria-label="Original video"></canvas>
           </div>
+          <div id="upscaledViewport" class="comparison-viewport" aria-label="Upscaled video view">
+            <canvas id="canvas" class="hidden" aria-label="Upscaled video"></canvas>
+          </div>
+          <button
+            id="comparisonDivider"
+            type="button"
+            role="slider"
+            aria-label="Original and upscaled split"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="50"
+            aria-valuetext="50% original, 50% upscaled"
+            aria-orientation="horizontal"
+          ></button>
         </div>
       </section>
     </main>
