@@ -500,7 +500,76 @@ export function openMatroska(reader: BufferedReader) {
             const flagsByte = await parseNumberAt(flagsOffset, 1);
             const lacing = (flagsByte & 0x06) >> 1;
 
-            if (lacing !== 0) return null;
+            const payloadStart = flagsOffset + 1;
+
+            // Byte length of every frame in the block, header and size table
+            // excluded. The last entry is always derived from the leftover
+            // payload so callers never re-read lace headers. null = one frame.
+            let sizes: number[] | null = null;
+            let frameDataStart = payloadStart;
+
+            if (lacing !== 0) {
+              const payload = await reader.read(payloadStart, b.end - payloadStart);
+              const frameCount = (payload[0] ?? 0) + 1;
+              let headerLength = 1;
+              sizes = [];
+
+              if (lacing === 1) {
+                // Xiph: each size is a run of 0xFF bytes plus one terminator < 0xFF.
+                while (sizes.length < frameCount - 1) {
+                  let frameSize = 0;
+                  for (;;) {
+                    const byte = payload[headerLength++];
+                    if (byte === undefined) throw new Error("Truncated Xiph lacing size table");
+                    frameSize += byte;
+                    if (byte !== 0xff) break;
+                  }
+                  sizes.push(frameSize);
+                }
+              } else if (lacing === 2) {
+                // Fixed: no size table; even split, leftover bytes go to the
+                // last frame, which the shared tail below derives.
+                const dataLength = payload.length - headerLength;
+                const frameSize = Math.floor(dataLength / frameCount);
+                if (frameSize <= 0) throw new Error("Empty fixed-size lace");
+                for (let i = 0; i < frameCount - 1; i++) sizes.push(frameSize);
+              } else {
+                // EBML: first size is an unsigned VINT, then signed VINT deltas off
+                // the previous frame. All-ones value bits are a real value here, not
+                // the unknown-size marker that applies to element sizes.
+                for (let i = 0; i < frameCount - 1; i++) {
+                  const firstByte = payload[headerLength];
+                  if (firstByte === undefined || firstByte === 0) {
+                    throw new Error("Invalid EBML lacing size VINT");
+                  }
+                  let vintWidth = 1;
+                  let mask = 0x80;
+                  while ((firstByte & mask) === 0) {
+                    vintWidth++;
+                    mask >>= 1;
+                  }
+                  let value = firstByte & (mask - 1);
+                  for (let j = 1; j < vintWidth; j++) {
+                    const byte = payload[headerLength + j];
+                    if (byte === undefined) throw new Error("Truncated EBML lacing size VINT");
+                    value = value * 256 + byte;
+                  }
+                  headerLength += vintWidth;
+                  if (i === 0) {
+                    sizes.push(value);
+                  } else {
+                    const previous = sizes[sizes.length - 1]!;
+                    sizes.push(previous + value - (2 ** (7 * vintWidth - 1) - 1));
+                  }
+                }
+              }
+
+              const usedSizes = sizes.reduce((sum, frameSize) => sum + frameSize, 0);
+              const lastSize = payload.length - headerLength - usedSizes;
+              if (lastSize < 0) throw new Error("Lacing sizes exceed block payload");
+              sizes.push(lastSize);
+              frameDataStart = payloadStart + headerLength;
+            }
 
             return {
               trackNumber,
@@ -511,8 +580,8 @@ export function openMatroska(reader: BufferedReader) {
                 lacing,
                 discardable: (flagsByte & 0x01) !== 0,
               },
-              lacingMetadata: {},
-              dataRange: [flagsOffset + 1, b.end] as const,
+              lacingMetadata: { type: lacing, frameCount: sizes?.length ?? 1, sizes },
+              dataRange: [frameDataStart, b.end] as const,
             };
           }
 
@@ -551,17 +620,42 @@ export function openMatroska(reader: BufferedReader) {
                 parsed.flags.discardable = false;
               }
 
-              const { trackNumber, relativeTimestamp, flags, dataRange } = parsed;
+              const { trackNumber, relativeTimestamp, flags, lacingMetadata, dataRange } = parsed;
               if (trackNumber !== track.number) continue;
 
-              yield {
-                codec: track.codecFormat.codec,
-                description: track.codecPrivate ?? undefined,
-                type: flags.keyframe ? "key" : "delta",
-                data: await reader.read(dataRange[0], dataRange[1] - dataRange[0]),
-                timestamp:
-                  ((targetCluster!.timestamp + relativeTimestamp) * timestampeScale) / 1_000,
-              } as AudioChunk;
+              const blockTimestamp =
+                ((targetCluster!.timestamp + relativeTimestamp) * timestampeScale) / 1_000;
+
+              if (!lacingMetadata.sizes) {
+                yield {
+                  codec: track.codecFormat.codec,
+                  description: track.codecPrivate ?? undefined,
+                  type: flags.keyframe ? "key" : "delta",
+                  data: await reader.read(dataRange[0], dataRange[1] - dataRange[0]),
+                  timestamp: blockTimestamp,
+                } as AudioChunk;
+                continue;
+              }
+
+              // A laced block stores one timestamp for all its frames; spread
+              // them with the codec's samples per frame (only AAC is supported,
+              // which reports it as framesPerPacket).
+              const payload = await reader.read(dataRange[0], dataRange[1] - dataRange[0]);
+              const { framesPerPacket, sampleRate } = track.codecFormat;
+              let offset = 0;
+              let samplesSoFar = 0;
+              for (const frameSize of lacingMetadata.sizes) {
+                yield {
+                  codec: track.codecFormat.codec,
+                  description: track.codecPrivate ?? undefined,
+                  type: flags.keyframe ? "key" : "delta",
+                  data: payload.subarray(offset, offset + frameSize),
+                  timestamp: blockTimestamp + (samplesSoFar / sampleRate) * 1_000_000,
+                  duration: (framesPerPacket / sampleRate) * 1_000_000,
+                } as AudioChunk;
+                offset += frameSize;
+                samplesSoFar += framesPerPacket;
+              }
             }
 
             targetCluster = await parseClusterAt(cursor);

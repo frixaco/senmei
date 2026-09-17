@@ -119,7 +119,7 @@ export async function play(source: string | Blob) {
   playVideo(mkv);
   status.textContent = "Playing video";
   // Audio playback is still being developed. Enable this call to test it.
-  // await playAudio(mkv);
+  await playAudio(mkv);
 }
 
 // eslint-disable-next-line no-unused-vars -- Audio work is kept here for manual testing.
@@ -182,7 +182,10 @@ async function playAudio(mkv: Awaited<ReturnType<ReturnType<typeof openMatroska>
         decoder.decodeQueueSize >= 32 ||
         (nextStart !== null && nextStart - audio.currentTime >= 60)
       ) {
-        await new Promise<void>((r) => setTimeout(r, 10 * 100));
+        // Short poll: a long sleep here starves the schedule — the decoder
+        // drains its queue faster than the loop notices, producing bursty
+        // feed/silence cycles (the chop).
+        await new Promise<void>((r) => setTimeout(r, 10));
       }
 
       const chunk = (await nextChunk.next()).value;
