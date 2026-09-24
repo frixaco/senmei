@@ -1,232 +1,1030 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Learn the audio concepts behind getAudioData, with MKV lacing byte examples, packet timing, and exercises instead of a finished implementation.">
-  <title>Understanding audio in Senmei</title>
-  <style>
-    :root{color-scheme:light;--ink:#172338;--muted:#526179;--blue:#174ec7;--line:#d8e0ee;--paper:#fbfcff;--nav:#101c31}
-    *{box-sizing:border-box}html{scroll-padding-top:24px}body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.75 "Segoe UI",system-ui,sans-serif}a{color:var(--blue);text-underline-offset:3px}:focus-visible{outline:3px solid #2683ff;outline-offset:4px}.skip{position:absolute;left:16px;top:-100px;background:white;padding:10px;z-index:5}.skip:focus{top:8px}
-    aside{position:fixed;inset:0 auto 0 0;width:254px;padding:31px 24px;overflow:auto;background:var(--nav);color:#d8e4fa}.brand{font-size:21px;font-weight:750;color:white;margin-bottom:28px}.brand span{color:#a6ecb0}nav a{display:block;color:#d8e4fa;text-decoration:none;font-size:15px;line-height:1.5;padding:10px 0}nav a:hover{text-decoration:underline}.side-note{font-size:14px;color:#b5c4db;border-top:1px solid #35425a;margin-top:24px;padding-top:20px}
-    main{margin-left:254px;padding:45px clamp(24px,5vw,82px) 70px;max-width:1180px}.eyebrow{font-size:14px;color:var(--muted)}h1{font-size:clamp(32px,4vw,48px);line-height:1.2;letter-spacing:-.025em;margin:13px 0 22px}h2{font-size:27px;line-height:1.3;margin:0 0 18px}h3{font-size:20px;line-height:1.4;margin:25px 0 9px}p{margin:13px 0}.chapter{border-top:1px solid var(--line);margin-top:38px;padding-top:29px}.intro{font-size:19px;line-height:1.65}.small,.source{font-size:14px;color:var(--muted)}.source{margin-top:19px}.source a{color:#3f5e91}
-    code{font:.9em/1.5 Consolas,"Cascadia Code",monospace;background:#eaf0fb;padding:2px 5px;border-radius:3px;overflow-wrap:anywhere}pre{background:var(--nav);color:#e1ebfc;border-radius:6px;padding:20px;overflow:auto;font-size:14px;line-height:1.65}pre code{font:inherit;color:inherit;background:none;padding:0;overflow-wrap:normal}.note,.question,.lab{border:1px solid var(--line);border-left:4px solid var(--blue);padding:15px 20px;margin:22px 0;background:#eef3ff;border-radius:0 6px 6px 0}.question{background:white;border-left-color:#a05b00}.lab{background:white}.label{font-size:14px;font-weight:700;color:var(--blue);margin-bottom:8px}.question .label{color:#865000}
-    .flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));background:var(--nav);color:#eef4ff;border-radius:6px;margin:24px 0}.flow>div{padding:17px;border-right:1px solid #3b4b65}.flow>div:last-child{border:0}.flow b{display:block;color:#a6ecb0;margin-bottom:5px}.flow span{display:block;font-size:15px;line-height:1.5}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}label{display:block;font-size:14px;font-weight:650}select{font:inherit;width:100%;margin-top:5px;padding:8px;border:1px solid #a8b8d3;border-radius:4px;background:white;color:var(--ink)}.result{background:var(--nav);color:white;border-radius:5px;padding:14px 17px;margin-top:17px}.result strong{color:#a6ecb0;font:24px Consolas,monospace}.result small{display:block;color:#c1d0e7;font-size:14px}
-    details{border:1px solid var(--line);background:white;border-radius:5px;margin:15px 0;padding:11px 16px}summary{cursor:pointer;font-size:15px;font-weight:600}details p{font-size:16px}ul,ol{padding-left:24px}li{margin:9px 0}.table-wrap{overflow-x:auto;margin:18px 0}table{width:100%;border-collapse:collapse;font-size:15px;text-align:left}th,td{vertical-align:top;border-bottom:1px solid var(--line);padding:10px 12px}th{background:#eaf0fb}footer{margin-top:34px;border-top:1px solid var(--line);padding-top:18px;font-size:14px;color:var(--muted)}
-    @media(max-width:880px){aside{position:static;width:auto;padding:21px 24px}.brand{margin-bottom:10px}nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 15px}nav a{font-size:14px;padding:6px 0}.side-note{display:none}main{margin:0;padding:30px 24px 55px}}
-    @media(max-width:560px){body{font-size:16px}main{padding:25px 18px 45px}.grid,.flow{grid-template-columns:1fr}.flow>div{border-right:0;border-bottom:1px solid #3b4b65}h2{font-size:24px}.note,.question,.lab{padding:14px}}
-    @media print{aside,.skip{display:none}main{margin:0;padding:0;max-width:none}body{font:11pt/1.6 sans-serif;background:white;color:black}h2,h3{break-after:avoid}pre,.lab,.question{break-inside:avoid}pre{white-space:pre-wrap}.flow,pre,.result{background:#eee;color:black}.flow b,.result strong,.result small{color:black}}
-  </style>
-</head>
-<body>
-<a class="skip" href="#main">Skip to the guide</a>
-<aside>
-  <div class="brand">senmei<span> / </span>audio</div>
-  <nav aria-label="Sections">
-    <a href="#pipeline">1. Where your function fits</a>
-    <a href="#samples">2. What decoded audio contains</a>
-    <a href="#lacing">3. Lacing: one block, many packets</a>
-    <a href="#decoder">4. Using AudioDecoder</a>
-    <a href="#playback">5. Making sound</a>
-    <a href="#time">6. Playing at the right time</a>
-    <a href="#practice">7. What to try first</a>
-  </nav>
-  <p class="side-note">Concepts and small exercises.<br>No finished getAudioData.</p>
-</aside>
-<main id="main">
-  <header>
-    <div class="eyebrow">A guide for your getAudioData work</div>
-    <h1>Understanding audio<br>before you write the player</h1>
-    <p class="intro">You already know how to give compressed video to <code>VideoDecoder</code> and receive pictures. Audio starts the same way. The main difference is what comes out: a sequence of numbers that must play continuously.</p>
-    <p>We'll use AAC-LC, the audio format your codec parser currently accepts. You don't need to learn how audio compression works internally. You need to understand the input, the output, and how to keep sound playing.</p>
-    <p>For the missing audio in your test files, start with <a href="#lacing">the lacing lesson</a>.</p>
-  </header>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A top-down guide to Senmei's MKV audio path: orchestration, contracts, WebCodecs decoding, Web Audio scheduling, and lacing."
+    />
+    <title>Build Senmei's audio path, top down</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #172238;
+        --muted: #59667a;
+        --paper: #f7f8fb;
+        --white: #ffffff;
+        --nav: #101b30;
+        --nav-line: #30405d;
+        --blue: #2158d8;
+        --green: #80e096;
+        --amber: #9a5b00;
+        --line: #d9e0eb;
+        --soft-blue: #edf3ff;
+        --soft-green: #edf9f0;
+        --code: #111d32;
+      }
 
-  <section class="chapter" id="pipeline">
-    <h2>1. Where does getAudioData fit?</h2>
-    <p>Your <code>getVideoData</code> reads the MKV file and yields compressed video packets. A <strong>packet</strong> is a piece of compressed media ready for the decoder. The function doesn't produce a <code>VideoFrame</code>; the decoder does that later.</p>
-    <p>The same separation applies to audio:</p>
-    <div class="flow"><div><b>Read the file</b><span>Your MKV reader extracts compressed audio packets.</span></div><div><b>Decode the packets</b><span>AudioDecoder produces numbers that describe the sound.</span></div><div><b>Play the sound</b><span>Web Audio sends those numbers to the speakers at the right time.</span></div></div>
-    <p>Reading one track out of a container is called <strong>demuxing</strong>. That is the job your function does. WebCodecs handles decoding. Web Audio handles playback. These APIs work together, but none does all three jobs for you.</p>
-    <p>This explains a common surprise: <code>AudioDecoder</code> can decode successfully while the page stays silent. Its output still needs somewhere to go, just as a decoded video frame still needs to be drawn.</p>
-    <p class="source"><a href="https://www.w3.org/TR/webcodecs/">WebCodecs overview</a></p>
-  </section>
+      * {
+        box-sizing: border-box;
+      }
 
-  <section class="chapter" id="samples">
-    <h2>2. What does decoded audio contain?</h2>
-    <p>Imagine measuring a sound signal thousands of times each second. Each measurement is a <strong>sample</strong>. Decoded audio is a long sequence of these numbers, often called <strong>PCM</strong>. A zero value means silence at that instant.</p>
-    <p>Stereo has two <strong>channels</strong>: left and right. At each instant, there is one sample for each channel. That pair is one <strong>sample frame</strong>. This use of “frame” is different from a whole picture in video.</p>
-    <pre><code>Time:        first    second    third
-Left:         0.1      0.2       0.3
-Right:       -0.1     -0.2      -0.3
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 24px;
+      }
 
-3 sample frames, 2 channels, 6 numbers</code></pre>
-    <p>The <strong>sample rate</strong> tells you how many frames make one second. At 48,000 Hz, each channel has 48,000 samples per second. A block of 960 frames therefore lasts:</p>
-    <pre><code>960 / 48,000 = 0.020 seconds = 20 milliseconds</code></pre>
-    <p>The number of channels does not change that duration. Six channels give you more numbers at each instant, not more time.</p>
-    <div class="lab"><div class="label">Try changing the channel count</div><div class="grid">
-      <label>Frames<select id="lab-frames"><option value="960">960</option><option value="1024" selected>1024</option><option value="48000">48,000</option></select></label>
-      <label>Sample rate<select id="lab-rate"><option value="44100">44,100 Hz</option><option value="48000" selected>48,000 Hz</option></select></label>
-      <label>Channels<select id="lab-channels"><option value="1">1 — mono</option><option value="2" selected>2 — stereo</option><option value="6">6 — surround</option></select></label>
-    </div><div class="result" id="sample-result" aria-live="polite"><strong>21.333 ms</strong><small>2,048 numbers · 8,192 bytes as float32 samples</small></div></div>
-    <p>The numbers can be arranged in two ways. <strong>Interleaved</strong> stereo stores <code>L0, R0, L1, R1</code>. <strong>Planar</strong> stereo stores all the left samples together and all the right samples together. The sound is the same; only the memory arrangement changes.</p>
-    <p class="source"><a href="https://developer.mozilla.org/en-US/docs/Web/API/AudioData">AudioData</a> · <a href="https://developer.mozilla.org/en-US/docs/Web/API/AudioData/format">Sample formats</a></p>
-  </section>
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font:
+          17px/1.72 Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
 
-  <section class="chapter" id="packets">
-    <h2 id="lacing">3. Lacing: one block, many packets</h2>
-    <p><strong>Lacing</strong> puts several compressed packets in one MKV block. They share a header to save space. Your reader must find each packet before it gives the bytes to <code>AudioDecoder</code>.</p>
-    <pre><code>No lacing: header | packet A
-Lacing:    header | count | size information | A | B | C</code></pre>
-    <p>Here, a <strong>packet</strong> means a compressed AAC frame. It can decode into 1024 sample frames per channel. These are two different uses of “frame.”</p>
-    <div class="note"><strong>What happened in your file:</strong> the first cluster of <em>Fate Strange Fake – 08</em> contained 87 audio packets in 11 laced blocks. Your <code>if (lacing !== 0) return null</code> skipped all of them. A shorter playback timer cannot recover those packets.</div>
+      a {
+        color: var(--blue);
+        text-underline-offset: 3px;
+      }
 
-    <h3>Read the mode, then the count</h3>
-    <p>Your existing expression extracts the lacing mode from the block's flags:</p>
-    <pre><code>const lacing = (flagsByte &amp; 0x06) &gt;&gt; 1;</code></pre>
-    <div class="table-wrap"><table>
-      <thead><tr><th scope="col">Value</th><th scope="col">Mode</th><th scope="col">How to find packet sizes</th></tr></thead>
-      <tbody>
-        <tr><td>0</td><td>None</td><td>One packet. All bytes after the flags belong to it.</td></tr>
-        <tr><td>1</td><td>Xiph</td><td>Add size bytes. Explained below.</td></tr>
-        <tr><td>2</td><td>Fixed-size</td><td>Divide the remaining packet bytes equally.</td></tr>
-        <tr><td>3</td><td>EBML</td><td>Read the first size, then changes from the previous size.</td></tr>
-      </tbody>
-    </table></div>
-    <p>For modes 1–3, the byte after the flags stores <strong>packet count minus one</strong>. A value of <code>7</code> means eight packets. Read this as an ordinary byte, not a VINT. Mode 0 has no count byte.</p>
-    <p>The same rules apply to <code>SimpleBlock</code> and the <code>Block</code> inside a <code>BlockGroup</code>. Read each block's mode; it can change within a track.</p>
+      :focus-visible {
+        outline: 3px solid #3484ff;
+        outline-offset: 4px;
+      }
 
-    <h3>Read one EBML example by hand</h3>
-    <p>Your two test files use EBML lacing. Start here. This made-up example has three packets, with lengths of 300, 298, and 301 bytes. Only the header bytes are shown; it is not playable AAC.</p>
-    <pre><code>82 00 00 86 | 02 | 41 2C | BD | [A: 300] [B: 298] [C: 301]
-block header count size A  change       packet bytes</code></pre>
-    <p>The header says track 2, relative timestamp 0, and flags <code>0x86</code>. Those flags give lacing mode 3. The header is four bytes here because the track number uses one byte. Your code must still use the actual track-number width.</p>
-    <ol>
-      <li><strong>Count:</strong> <code>02</code> means <code>2 + 1 = 3</code> packets.</li>
-      <li><strong>First size:</strong> <code>41 2C</code> is an unsigned VINT with value <code>300</code>.</li>
-      <li><strong>Next size:</strong> <code>BD</code> stores a signed difference of <code>−2</code>. Packet B is <code>300 − 2 = 298</code> bytes.</li>
-      <li><strong>Last size:</strong> no size is stored for C. After the count and size information, 899 bytes remain. C gets <code>899 − 300 − 298 = 301</code>.</li>
-    </ol>
-    <p>For <code>N</code> packets, EBML stores one first size and <code>N − 2</code> differences. With two packets, there are no differences to read.</p>
+      .skip {
+        position: fixed;
+        z-index: 10;
+        left: 16px;
+        top: -100px;
+        padding: 10px 14px;
+        background: white;
+      }
 
-    <h3>How do those VINT bytes become numbers?</h3>
-    <p>A <strong>VINT</strong> is an integer whose first set bit tells you its byte width. A leading <code>1</code> means one byte; <code>01</code> means two. Remove that marker bit to get the number.</p>
-    <pre><code>41 2C = 01000001 00101100
-        remove the 01 marker prefix
-        remaining value = 1 × 256 + 44 = 300
+      .skip:focus {
+        top: 10px;
+      }
 
-BD    = 10111101
-        remove the leading 1
-        remaining value = 61</code></pre>
-    <p>A size difference then needs one more step. Subtract <code>2 ** (7 * width - 1) - 1</code>, where <code>width</code> is the VINT's byte count. For one byte, subtract 63. Thus <code>61 − 63 = −2</code>. For two bytes, subtract 8191.</p>
-    <p>Your block timestamp uses a different signed-number format. Its 16-bit conversion will not work for these differences.</p>
-    <details><summary>One trap in your parseSizeAt helper</summary><p>That helper turns an all-ones value into <code>−1</code> for an unknown element size. Lacing values do not use that rule. For example, <code>FF</code> has VINT value 127 and means a one-byte difference of <code>127 − 63 = +64</code>. Reuse the VINT byte-reading logic, but keep the element-size rule separate.</p></details>
-    <p class="source"><a href="https://www.rfc-editor.org/rfc/rfc8794.html#section-4">VINT encoding</a> · <a href="https://www.rfc-editor.org/rfc/rfc9559.html#name-ebml-lacing">Signed differences in EBML lacing</a></p>
+      aside {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: 270px;
+        overflow: auto;
+        padding: 30px 24px;
+        background: var(--nav);
+        color: #dbe6f9;
+      }
 
-    <h3>Turn the sizes into byte ranges</h3>
-    <p>In this example, packet A starts eight bytes after <code>b.dataStart</code>: four header bytes, one count byte, two size bytes, and one difference byte.</p>
-    <pre><code>Offsets relative to b.dataStart; the end is excluded:
+      .brand {
+        margin-bottom: 5px;
+        color: white;
+        font-size: 21px;
+        font-weight: 760;
+      }
 
-A: [  8, 308)   → 300 bytes
-B: [308, 606)   → 298 bytes
-C: [606, 907)   → 301 bytes</code></pre>
-    <p>Only these three ranges go to the decoder, one packet per chunk. The count and size bytes describe the packets; they are not audio. They are also not child elements for <code>peekElementAt</code> to parse.</p>
+      .brand span {
+        color: var(--green);
+      }
 
-    <details><summary>How do fixed-size and Xiph lacing differ?</summary>
-      <p><strong>Fixed-size:</strong> after the count byte, 900 bytes remain for three packets. Each gets <code>900 / 3 = 300</code> bytes. If the division has a remainder, reject the block.</p>
-      <p><strong>Xiph:</strong> for each packet except the last, add bytes until you read one below 255. For a size of 300, read <code>FF 2D</code>: <code>255 + 45</code>. For exactly 255, read <code>FF 00</code>; the zero ends that size. The last packet gets the remaining bytes.</p>
-    </details>
+      .side-kicker {
+        margin: 0 0 26px;
+        color: #9fb1cc;
+        font-size: 13px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
 
-    <h3>Each packet also needs its own timestamp</h3>
-    <p>The block timestamp belongs to packet A. B follows A, and C follows B, with no gaps. For your supported AAC-LC configuration, use <code>framesPerPacket / sampleRate</code> for the packet duration. Compressed byte size does not tell you duration.</p>
-    <pre><code>Example: 1024 frames / 44,100 Hz ≈ 0.023220 seconds
+      nav a {
+        display: block;
+        padding: 8px 0;
+        color: #dbe6f9;
+        font-size: 14px;
+        line-height: 1.4;
+        text-decoration: none;
+      }
 
-If A starts at 2 seconds:
-A: 2,000,000 microseconds
-B: 2,023,220 microseconds
-C: 2,046,440 microseconds</code></pre>
-    <p>These values are rounded for display. Calculate each offset from its packet index and the exact duration, then round for WebCodecs. Do not repeatedly add a rounded duration.</p>
+      nav a:hover {
+        color: white;
+        text-decoration: underline;
+      }
 
-    <div class="question" id="lacing-practice"><div class="label">Your next code step</div>
-      <p>First make one block produce packet ranges. Leave decoding out of this small check.</p>
-      <ol>
-        <li>Your <code>parseBlock</code> returns one <code>dataRange</code>. What should it return for the three ranges above?</li>
-        <li>Where should your current single <code>yield</code> become a loop?</li>
-        <li>If the example ends at offset 600 instead of 907, which computed packet no longer fits?</li>
-      </ol>
-      <details><summary>Show hints</summary><p>Think of a list of ranges, then one yield per range. B would end at 606, past the new end of 600. Reject a truncated header, a negative size, or any range outside the block. Reject lacing with fewer than two packets. Keep all offsets and sizes within JavaScript's safe integer range. Report these errors instead of silently skipping the block.</p></details>
-    </div>
-    <p class="source"><a href="https://www.matroska.org/technical/notes.html#block-lacing">Lacing modes and packet timestamps</a></p>
-  </section>
+      .side-note {
+        margin-top: 24px;
+        padding-top: 19px;
+        border-top: 1px solid var(--nav-line);
+        color: #aebdd2;
+        font-size: 13px;
+      }
 
-  <section class="chapter" id="decoder">
-    <h2>4. What changes when you use AudioDecoder?</h2>
-    <p>The pattern will feel familiar: create a decoder with output and error callbacks, configure it, then submit compressed chunks. Audio needs a different configuration and produces a different output object.</p>
-    <h3>Describe the audio format</h3>
-    <p>The configuration includes a codec string, sample rate, channel count, and sometimes extra binary data called <code>description</code>. “Description” does not mean a text label. It contains information the codec needs to interpret the compressed bytes.</p>
-    <p>For your AAC track, that data is called <code>AudioSpecificConfig</code>. Your existing codec parser reads it. In WebCodecs, supplying it means the decoder expects raw AAC packets. Without it, the AAC registration expects packets with ADTS headers, a different format. “Raw AAC” is still compressed; here, “raw” means it has no ADTS header.</p>
-    <p>Check the exact configuration with <code>AudioDecoder.isConfigSupported()</code>. Having the API in the browser does not guarantee support for every codec. For AAC, the encoded configuration determines the actual rate and channels; the generic API still requires those fields.</p>
-    <h3>Give each chunk the correct timing and type</h3>
-    <p>An <code>EncodedAudioChunk</code> carries compressed bytes, a timestamp, a type, and an optional duration. WebCodecs measures timestamps and durations in <strong>microseconds</strong>: one second is 1,000,000 microseconds.</p>
-    <p>The AAC specification says its chunk type is <code>"key"</code>. This is why copying the video keyframe logic without checking the audio rules can be misleading. Read the codec's rule before deciding what your generator should yield.</p>
-    <h3>Wait for output through the callback</h3>
-    <p><code>decode()</code> submits work and returns. The output callback later receives an <code>AudioData</code> object. Adding <code>await</code> to <code>decode()</code> does not wait for that output. Nor should your code depend on every call immediately producing exactly one object.</p>
-    <p>At the end of a finite input, <code>flush()</code> waits for pending decoding and output. It does not wait for the sound to finish playing. Errors can arrive through the error callback too, after the call that submitted the packet.</p>
-    <p class="source"><a href="https://developer.mozilla.org/en-US/docs/Web/API/AudioDecoder">AudioDecoder reference</a> · <a href="https://www.w3.org/TR/webcodecs-aac-codec-registration/">AAC rules</a> · <a href="https://developer.mozilla.org/en-US/docs/Web/API/EncodedAudioChunk">Chunk fields</a></p>
-  </section>
+      main {
+        max-width: 1180px;
+        margin-left: 270px;
+        padding: 50px clamp(28px, 6vw, 88px) 72px;
+      }
 
-  <section class="chapter" id="playback">
-    <h2>5. How do those numbers become sound?</h2>
-    <p>Read the properties of each <code>AudioData</code>: its sample rate, channel count, frame count, sample format, and timestamp. These describe the output you actually received.</p>
-    <p>Web Audio stores samples in an <code>AudioBuffer</code>, with one float32 array per channel. Each float32 number uses four bytes. An <code>AudioBufferSourceNode</code> reads that buffer and plays it through connected audio nodes. Connecting it to the context's destination gives the sound a route to the speakers.</p>
-    <p>To move samples out of <code>AudioData</code>, learn <code>copyTo()</code>. It can convert them to <code>f32-planar</code>: floating-point numbers, separated by channel. This fits Web Audio's storage format.</p>
-    <p>Once you have copied everything you need, call <code>close()</code> on the <code>AudioData</code>. That releases its media resource. Your separate copy remains usable. Keeping every decoded object forever would keep using more memory.</p>
-    <p>Keep the sample rate attached to the samples correct. If 44,100 frames represent one second, labelling them as 48,000 Hz makes them play too fast. Web Audio can convert between a buffer's rate and the context's rate; changing the label yourself is not that conversion.</p>
-    <p>A source node can start only once. Also, the browser may keep the audio context suspended until the user clicks Play. Check the context state if decoded samples arrive but you hear nothing.</p>
-    <p class="source"><a href="https://developer.mozilla.org/en-US/docs/Web/API/AudioData/copyTo">copyTo()</a> · <a href="https://developer.mozilla.org/en-US/docs/Web/API/AudioBufferSourceNode">Buffer sources</a> · <a href="https://developer.chrome.com/blog/autoplay/">Allowing sound after a user action</a></p>
-  </section>
+      header {
+        max-width: 850px;
+      }
 
-  <section class="chapter" id="time">
-    <h2>6. How do you keep it playing smoothly?</h2>
-    <p>Your video loop can wait until a frame is due, then draw it. Audio needs an uninterrupted sequence of samples. Starting each small block when a JavaScript callback happens to run can leave gaps.</p>
-    <p>Instead, Web Audio lets you schedule sound ahead of time. Its clock is <code>AudioContext.currentTime</code>, measured in <strong>seconds</strong>. That clock starts with the context, not with your movie.</p>
-    <p>Suppose you decide that movie time 3.000 seconds will play at audio-context time 12.100 seconds. Sound belonging at movie time 3.040 must then start at context time 12.140. You keep the same 40-millisecond difference:</p>
-    <pre><code>Movie time:          3.000 s    3.020 s    3.040 s
-Audio-context time: 12.100 s   12.120 s   12.140 s</code></pre>
-    <p>Convert WebCodecs microseconds to seconds before comparing these values. Preserve the timestamps shared by audio and video; setting each track's first timestamp to zero independently can destroy their intended timing difference.</p>
-    <h3>Keep some audio ready, but not the whole movie</h3>
-    <p>A queue of decoded samples covers short delays in reading or decoding. Measure it in seconds as well as objects. Ten 20-millisecond blocks give you 0.2 seconds of sound. Ten 100-millisecond blocks give you a full second.</p>
-    <p><code>decodeQueueSize</code> measures pending decoder requests. It does not tell you how much decoded sound is ready. Watch both, because many requests can be submitted before their output callbacks run.</p>
-    <p>Finally, avoid repeatedly rounding durations. At 48,000 Hz, 1024 frames last about 21.333 milliseconds. Treating every block as exactly 21 milliseconds gradually loses time.</p>
-    <div class="question"><div class="label">Check your understanding</div><p>A packet belongs at movie time 3.040 seconds, but decoding finishes later than usual. Should its timestamp change because the callback was late?</p><details><summary>Show the explanation</summary><p>No. The timestamp says where the sound belongs in the movie. The callback time only says when it became available. If the playback deadline has already passed, the player needs to handle that delay.</p></details></div>
-    <p class="source"><a href="https://developer.mozilla.org/en-US/docs/Web/API/BaseAudioContext/currentTime">The audio clock</a> · <a href="https://developer.mozilla.org/en-US/docs/Web/API/AudioDecoder/decodeQueueSize">The decoder queue</a></p>
-  </section>
+      .eyebrow,
+      .zoom {
+        color: var(--blue);
+        font-size: 13px;
+        font-weight: 750;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
 
-  <section class="chapter" id="practice">
-    <h2>7. What should you try before the full player?</h2>
-    <ol>
-      <li><strong>Understand one sample block.</strong> Given 1024 frames at 48,000 Hz, calculate its duration. Then explain why stereo doubles the number of values but not the time.</li>
-      <li><strong>Make sound without MKV.</strong> Create a short test sound with Web Audio. Start it from a button. This lets you learn playback without wondering whether your packet reader is broken.</li>
-      <li><strong>Decode a small, known input.</strong> Use valid AAC packets and matching configuration. Log the output's frame count, rate, channels, format, and timestamp. Copy some samples, then release the output.</li>
-      <li><strong>Check one laced block.</strong> Work through the <a href="#lacing-practice">packet-range exercise</a>. Confirm that each range contains one packet and that the final range ends at the block's end.</li>
-    </ol>
-    <p>Before you call the player complete, handle normal end-of-file separately from damaged input. On Stop, release queued samples and stop sound already scheduled. On seek, prevent old reads and old samples from entering the new playback position.</p>
-    <p>You can leave AudioWorklet, shared memory, and compression mathematics for later. Exact seeking and gapless playback need more study of codec delay and padding, but they don't need to obscure your first lesson.</p>
-    <div class="note"><strong>Your next step:</strong> explain what one item from <code>getAudioData</code> should contain, in your own words. Include its bytes, its time units, and what happens when the file ends. Then write it yourself.</div>
-  </section>
-  <footer>Based on your Senmei code and the linked API documentation. The page and calculator work offline.</footer>
-</main>
-<script>
-  const byId = (id) => document.getElementById(id);
-  function updateSamples() {
-    const frames = Number(byId('lab-frames').value);
-    const rate = Number(byId('lab-rate').value);
-    const channels = Number(byId('lab-channels').value);
-    const values = frames * channels;
-    byId('sample-result').innerHTML = '<strong>' + (frames / rate * 1000).toFixed(3) + ' ms</strong><small>' + values.toLocaleString('en-US') + ' numbers · ' + (values * 4).toLocaleString('en-US') + ' bytes as float32 samples</small>';
+      h1 {
+        max-width: 800px;
+        margin: 12px 0 22px;
+        font-size: clamp(36px, 5.2vw, 62px);
+        line-height: 1.07;
+        letter-spacing: -0.045em;
+      }
+
+      h2 {
+        margin: 7px 0 18px;
+        font-size: clamp(25px, 3vw, 34px);
+        line-height: 1.25;
+        letter-spacing: -0.018em;
+      }
+
+      h3 {
+        margin: 29px 0 9px;
+        font-size: 20px;
+        line-height: 1.4;
+      }
+
+      p {
+        margin: 13px 0;
+      }
+
+      .intro {
+        max-width: 790px;
+        font-size: 20px;
+        line-height: 1.6;
+      }
+
+      .chapter {
+        max-width: 880px;
+        margin-top: 48px;
+        padding-top: 36px;
+        border-top: 1px solid var(--line);
+      }
+
+      code {
+        border-radius: 4px;
+        background: #e7edf7;
+        padding: 2px 5px;
+        font:
+          0.88em/1.5 "SFMono-Regular",
+          Consolas,
+          monospace;
+        overflow-wrap: anywhere;
+      }
+
+      pre {
+        margin: 20px 0;
+        overflow: auto;
+        border: 1px solid #23314a;
+        border-radius: 8px;
+        background: var(--code);
+        color: #e5edf9;
+        padding: 19px 21px;
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      pre code {
+        padding: 0;
+        background: none;
+        color: inherit;
+        font: inherit;
+        overflow-wrap: normal;
+      }
+
+      .architecture {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin: 27px 0;
+        overflow: hidden;
+        border-radius: 8px;
+        background: var(--nav);
+        color: #eaf1fc;
+      }
+
+      .architecture div {
+        position: relative;
+        min-height: 132px;
+        padding: 18px;
+        border-right: 1px solid var(--nav-line);
+      }
+
+      .architecture div:last-child {
+        border: 0;
+      }
+
+      .architecture div:not(:last-child)::after {
+        position: absolute;
+        z-index: 2;
+        top: 52px;
+        right: -9px;
+        content: "→";
+        color: var(--green);
+        font-weight: 800;
+      }
+
+      .architecture b {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--green);
+        font-size: 15px;
+      }
+
+      .architecture span {
+        display: block;
+        font-size: 14px;
+        line-height: 1.48;
+      }
+
+      .contract,
+      .note,
+      .warning,
+      .checkpoint {
+        margin: 22px 0;
+        border: 1px solid var(--line);
+        border-left: 4px solid var(--blue);
+        border-radius: 0 7px 7px 0;
+        background: var(--white);
+        padding: 16px 20px;
+      }
+
+      .contract {
+        background: var(--soft-blue);
+      }
+
+      .warning {
+        border-left-color: var(--amber);
+        background: #fffaf1;
+      }
+
+      .checkpoint {
+        border-left-color: #27823b;
+        background: var(--soft-green);
+      }
+
+      .label {
+        margin-bottom: 7px;
+        color: var(--blue);
+        font-size: 13px;
+        font-weight: 780;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .warning .label {
+        color: var(--amber);
+      }
+
+      .checkpoint .label {
+        color: #237333;
+      }
+
+      .contract p:last-child,
+      .note p:last-child,
+      .warning p:last-child,
+      .checkpoint p:last-child {
+        margin-bottom: 0;
+      }
+
+      .two-col {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        margin: 20px 0;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: white;
+        padding: 17px 19px;
+      }
+
+      .card h3 {
+        margin-top: 0;
+        font-size: 17px;
+      }
+
+      .card p {
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+
+      ol,
+      ul {
+        padding-left: 24px;
+      }
+
+      li {
+        margin: 9px 0;
+      }
+
+      .table-wrap {
+        margin: 18px 0;
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        font-size: 15px;
+        text-align: left;
+      }
+
+      th,
+      td {
+        padding: 11px 13px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+
+      th {
+        background: #e9eef7;
+      }
+
+      details {
+        margin: 15px 0;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: white;
+        padding: 12px 16px;
+      }
+
+      summary {
+        cursor: pointer;
+        font-size: 15px;
+        font-weight: 680;
+      }
+
+      .source {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .source a {
+        color: #456393;
+      }
+
+      footer {
+        max-width: 880px;
+        margin-top: 42px;
+        padding-top: 20px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      @media (max-width: 940px) {
+        aside {
+          position: static;
+          width: auto;
+          padding: 22px 25px;
+        }
+
+        .side-kicker {
+          margin-bottom: 13px;
+        }
+
+        nav {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 0 18px;
+        }
+
+        .side-note {
+          display: none;
+        }
+
+        main {
+          margin: 0;
+          padding: 38px 25px 58px;
+        }
+      }
+
+      @media (max-width: 680px) {
+        body {
+          font-size: 16px;
+        }
+
+        main {
+          padding: 30px 18px 48px;
+        }
+
+        nav,
+        .architecture,
+        .two-col {
+          grid-template-columns: 1fr;
+        }
+
+        .architecture div {
+          min-height: 0;
+          border-right: 0;
+          border-bottom: 1px solid var(--nav-line);
+        }
+
+        .architecture div:not(:last-child)::after {
+          top: auto;
+          right: 20px;
+          bottom: -13px;
+          content: "↓";
+        }
+
+        pre {
+          margin-inline: -6px;
+          padding: 16px;
+        }
+      }
+
+      @media print {
+        aside,
+        .skip {
+          display: none;
+        }
+
+        body {
+          background: white;
+          color: black;
+          font: 11pt/1.55 sans-serif;
+        }
+
+        main {
+          max-width: none;
+          margin: 0;
+          padding: 0;
+        }
+
+        h2,
+        h3,
+        pre,
+        .contract,
+        .note,
+        .warning,
+        .checkpoint {
+          break-inside: avoid;
+        }
+
+        pre,
+        .architecture {
+          background: #eee;
+          color: black;
+        }
+
+        .architecture b {
+          color: black;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to the guide</a>
+    <aside>
+      <div class="brand">senmei<span> / </span>audio</div>
+      <p class="side-kicker">Top-down field guide</p>
+      <nav aria-label="Sections">
+        <a href="#goal">1. Define “working”</a>
+        <a href="#shape">2. Draw the whole path</a>
+        <a href="#orchestrator">3. Write the orchestrator</a>
+        <a href="#demux">4. Demux packets</a>
+        <a href="#decode">5. Decode AAC</a>
+        <a href="#schedule">6. Schedule PCM</a>
+        <a href="#lacing">7. Parse lacing</a>
+        <a href="#lifecycle">8. Own the lifecycle</a>
+        <a href="#verify">9. Verify in layers</a>
+      </nav>
+      <p class="side-note">
+        Start with player behavior.<br />Zoom into bytes only when the architecture asks for them.
+      </p>
+    </aside>
+
+    <main id="main">
+      <header>
+        <div class="eyebrow">Senmei implementation guide</div>
+        <h1>Build the audio path from the outside in.</h1>
+        <p class="intro">
+          Do not begin with PCM vocabulary or EBML bit fields. Begin with the promise the player
+          makes: after Play, the selected MKV audio track is audible, continuous, synchronized, and
+          stoppable. Then assign each part of that promise to one layer.
+        </p>
+        <div class="note">
+          <div class="label">Scope</div>
+          <p>
+            This guide follows Senmei's current supported path: Matroska containing AAC-LC,
+            WebCodecs for decoding, and Web Audio for output. It is an implementation map, not an
+            explanation of AAC compression mathematics.
+          </p>
+        </div>
+      </header>
+
+      <section class="chapter" id="goal">
+        <div class="zoom">Zoom level 0 · Product behavior</div>
+        <h2>1. First define what “audio works” means</h2>
+        <p>
+          A decoder producing data is not success. The player owns an end-to-end behavior with six
+          observable requirements:
+        </p>
+        <ol>
+          <li>A user action starts or resumes browser audio.</li>
+          <li>The selected MKV track is the track being heard.</li>
+          <li>Packets that belong at time <code>t</code> play at movie time <code>t</code>.</li>
+          <li>Small read and decode delays do not create audible gaps.</li>
+          <li>End-of-file drains normally; malformed input reports an error.</li>
+          <li>Stop, seek, and replacement playback cannot leak old audio into the new session.</li>
+        </ol>
+        <p>
+          These requirements tell us what state the design needs: a selected track, a media clock
+          mapping, a scheduling horizon, cancellation, and explicit end/error handling. None of
+          those decisions should be hidden inside the lacing parser.
+        </p>
+        <div class="warning">
+          <div class="label">The central distinction</div>
+          <p>
+            <strong>Media time</strong> says where sound belongs in the movie.
+            <strong>Wall-clock time</strong> says when JavaScript happened to finish decoding it.
+            Never replace the first with the second.
+          </p>
+        </div>
+      </section>
+
+      <section class="chapter" id="shape">
+        <div class="zoom">Zoom level 1 · System</div>
+        <h2>2. Draw the whole path before implementing a piece</h2>
+        <div class="architecture" aria-label="Audio data path">
+          <div><b>MKV bytes</b><span>Clusters contain blocks for several tracks.</span></div>
+          <div><b>Demuxer</b><span>Yields one compressed AAC packet with media timing.</span></div>
+          <div><b>AudioDecoder</b><span>Turns AAC packets into timestamped PCM samples.</span></div>
+          <div>
+            <b>Web Audio</b><span>Schedules those samples against its hardware clock.</span>
+          </div>
+        </div>
+        <p>Each boundary has one narrow contract:</p>
+        <div class="two-col">
+          <div class="card">
+            <h3>Container → decoder</h3>
+            <p>
+              Compressed bytes, codec configuration, and a timestamp in microseconds. No speakers,
+              no <code>AudioBuffer</code>, no playback policy.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Decoder → output</h3>
+            <p>
+              <code>AudioData</code>: decoded sample frames plus their rate, channels, format, and
+              media timestamp.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Output → scheduler</h3>
+            <p>
+              Planar float samples and a media timestamp. The scheduler chooses an AudioContext
+              start time.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Player → everything</h3>
+            <p>
+              Play, stop, seek, and error ownership. This is the only layer that knows the whole
+              session.
+            </p>
+          </div>
+        </div>
+        <div class="contract">
+          <div class="label">Key design rule</div>
+          <p>
+            <code>getAudioData()</code> demuxes. It does not decode or play. The decoder does not
+            decide synchronization. The scheduler does not parse Matroska.
+          </p>
+        </div>
+      </section>
+
+      <section class="chapter" id="orchestrator">
+        <div class="zoom">Zoom level 2 · Control flow</div>
+        <h2>3. Write the orchestration as a readable story</h2>
+        <p>
+          The top-level function should reveal the lifecycle even before its helpers exist. In
+          pseudocode, Senmei's audio session is this:
+        </p>
+        <pre><code>async function playAudio(mkv, trackIndex, signal) {
+  const track = mkv.audios[trackIndex];
+  const context = new AudioContext();
+
+  await context.resume();                    // must follow a user gesture
+  const scheduler = createScheduler(context);
+  const decoder = await createAacDecoder(track, scheduler.push);
+
+  try {
+    for await (const packet of mkv.getAudioData(trackIndex)) {
+      if (signal.aborted) break;
+      await waitForCapacity(decoder, scheduler, signal);
+      decoder.decode(toEncodedAudioChunk(packet));
+    }
+
+    await decoder.flush();                   // drain submitted packets
+    await scheduler.finished();              // optional: wait for audible tail
+  } finally {
+    scheduler.stop();
+    decoder.close();
+    await context.close();
   }
-  for (const id of ['lab-frames', 'lab-rate', 'lab-channels']) byId(id).addEventListener('change', updateSamples);
-  updateSamples();
-</script>
-</body>
+}</code></pre>
+        <p>
+          Read it top to bottom: establish output, create collaborators, feed with backpressure,
+          drain, then release. Details belong behind those names. The structure also exposes two
+          different endings: <code>flush()</code> means decoding is done; it does not mean the last
+          scheduled sound has reached the speakers.
+        </p>
+        <div class="warning">
+          <div class="label">Do not lose asynchronous errors</div>
+          <p>
+            Throwing inside an <code>AudioDecoder</code> error callback does not reliably reject the
+            loop that called <code>decode()</code>. Store or forward that failure into the session's
+            promise/cancellation path so the owner can clean up and report it.
+          </p>
+        </div>
+      </section>
+
+      <section class="chapter" id="demux">
+        <div class="zoom">Zoom level 3 · Demux boundary</div>
+        <h2>4. Make the demuxer yield decoder-ready packets</h2>
+        <p>
+          One yielded item should be sufficient to construct one <code>EncodedAudioChunk</code>.
+          Define that result before walking any Cluster:
+        </p>
+        <pre><code>type AudioPacket = {
+  data: Uint8Array;       // exactly one raw AAC access unit
+  timestamp: number;      // media time, microseconds
+  duration: number;       // microseconds
+  type: "key";            // required by the WebCodecs AAC registration
+};</code></pre>
+        <p>
+          Codec-wide values do not need to repeat on every packet. The selected track already owns
+          <code>codec</code>, <code>description</code>, <code>sampleRate</code>, channel count, and
+          <code>framesPerPacket</code>. Keep those in track metadata and keep packet output small.
+        </p>
+        <h3>Walk containers in media order</h3>
+        <ol>
+          <li>Read a Cluster and its Cluster Timestamp.</li>
+          <li>
+            Visit each <code>SimpleBlock</code> or <code>BlockGroup/Block</code> in file order.
+          </li>
+          <li>Parse the track number, signed relative timestamp, flags, and payload layout.</li>
+          <li>Ignore blocks from other tracks.</li>
+          <li>Split the selected block into one or more packet ranges.</li>
+          <li>Yield one <code>AudioPacket</code> for every range.</li>
+        </ol>
+        <h3>Convert timestamps once, at the boundary</h3>
+        <p>Matroska block time becomes WebCodecs microseconds:</p>
+        <pre><code>blockTimeUs =
+  (clusterTimestamp + signedBlockTimestamp) * timestampScaleNs / 1_000;</code></pre>
+        <p>
+          For AAC-LC, one packet produces either 1024 or 960 sample frames according to the parsed
+          <code>AudioSpecificConfig</code>. Its duration is therefore:
+        </p>
+        <pre><code>packetDurationUs = framesPerPacket / sampleRate * 1_000_000;
+packetTimestampUs(i) = blockTimeUs + i * packetDurationUs;</code></pre>
+        <p>
+          Derive every packet timestamp from <code>i</code>. Repeatedly adding a rounded duration
+          accumulates drift. Compressed byte length tells you nothing about playback duration.
+        </p>
+        <div class="checkpoint">
+          <div class="label">Demuxer invariant</div>
+          <p>
+            Concatenating all packet ranges must reproduce the block's frame-data region exactly: no
+            lacing header bytes, overlaps, holes, or bytes past the block end.
+          </p>
+        </div>
+      </section>
+
+      <section class="chapter" id="decode">
+        <div class="zoom">Zoom level 3 · Decode boundary</div>
+        <h2>5. Configure once, then feed without assumptions</h2>
+        <p>
+          Senmei's AAC parser already obtains the values the browser needs from
+          <code>CodecPrivate</code>. Validate the exact configuration before opening the session:
+        </p>
+        <pre><code>const config = {
+  codec: track.codecFormat.codec,                 // e.g. mp4a.40.2
+  description: track.codecFormat.description,     // AudioSpecificConfig
+  sampleRate: track.codecFormat.sampleRate,
+  numberOfChannels: track.codecFormat.numberOfChannels,
+};
+
+const support = await AudioDecoder.isConfigSupported(config);
+if (!support.supported) throw new Error("AAC configuration is not supported");
+decoder.configure(support.config);</code></pre>
+        <p>
+          With <code>description</code> present, WebCodecs expects raw AAC access units. Do not add
+          ADTS headers. “Raw” here still means compressed AAC; it only means the transport wrapper
+          is absent.
+        </p>
+        <pre><code>decoder.decode(new EncodedAudioChunk({
+  type: "key",
+  data: packet.data,
+  timestamp: Math.round(packet.timestamp),
+  duration: Math.round(packet.duration),
+}));</code></pre>
+        <h3>Output is callback-driven</h3>
+        <p>
+          <code>decode()</code> queues work and returns <code>undefined</code>. The output callback
+          may run later, and code must not assume one immediate output per call. At finite
+          end-of-file, <code>await decoder.flush()</code> waits for all submitted work to emit or
+          fail.
+        </p>
+        <div class="contract">
+          <div class="label">Backpressure has two measurements</div>
+          <p>
+            <code>decoder.decodeQueueSize</code> limits compressed work waiting in WebCodecs. The
+            scheduler's queued seconds limit decoded sound waiting in Web Audio. Watching only one
+            can still buffer the whole movie or starve playback.
+          </p>
+        </div>
+        <p class="source">
+          <a href="https://developer.mozilla.org/en-US/docs/Web/API/AudioDecoder">AudioDecoder</a>
+          ·
+          <a href="https://www.w3.org/TR/webcodecs-aac-codec-registration/"
+            >WebCodecs AAC registration</a
+          >
+        </p>
+      </section>
+
+      <section class="chapter" id="schedule">
+        <div class="zoom">Zoom level 3 · Playback boundary</div>
+        <h2>6. Map media time onto the AudioContext clock</h2>
+        <p>
+          WebCodecs timestamps are media microseconds. Web Audio schedules against
+          <code>AudioContext.currentTime</code> in seconds. Anchor those clocks once:
+        </p>
+        <pre><code>mediaOriginUs = firstAudioData.timestamp;
+contextOriginS = context.currentTime + startupLeadS;
+
+function contextTimeFor(mediaTimestampUs) {
+  return contextOriginS + (mediaTimestampUs - mediaOriginUs) / 1_000_000;
+}</code></pre>
+        <p>
+          If audio and video have a shared player clock, use the same media origin for both instead
+          of independently zeroing each track. Otherwise an intentional track offset disappears.
+        </p>
+        <h3>Copy decoded samples into Web Audio</h3>
+        <pre><code>function schedule(data) {
+  try {
+    const buffer = context.createBuffer(
+      data.numberOfChannels,
+      data.numberOfFrames,
+      data.sampleRate,
+    );
+
+    for (let channel = 0; channel &lt; data.numberOfChannels; channel++) {
+      data.copyTo(buffer.getChannelData(channel), {
+        planeIndex: channel,
+        format: "f32-planar",
+      });
+    }
+
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+    source.start(contextTimeFor(data.timestamp));
+    remember(source); // stop it if this session is cancelled
+  } finally {
+    data.close();
+  }
+}</code></pre>
+        <p>
+          <code>AudioData</code> owns a media resource, so close it after copying. The
+          <code>AudioBuffer</code> remains valid. Keep the decoded sample rate intact: relabeling
+          44.1 kHz samples as 48 kHz changes speed and pitch; it is not resampling.
+        </p>
+        <h3>Schedule ahead, within a bounded horizon</h3>
+        <p>
+          JavaScript timers are not an audio clock. Maintain a small lead—enough to absorb ordinary
+          demux and decode jitter—while stopping input when too much sound is already scheduled.
+          Express the limit in seconds, not object count.
+        </p>
+        <pre><code>scheduledAheadS = lastScheduledEndS - context.currentTime;
+
+if (scheduledAheadS &gt;= MAX_AUDIO_AHEAD_S) {
+  await scheduler.onCapacity(signal);
+}</code></pre>
+        <div class="warning">
+          <div class="label">A useful prototype is not full synchronization</div>
+          <p>
+            Scheduling every output at <code>nextStart += buffer.duration</code> can produce smooth
+            sound, but it erases timestamp gaps and overlaps. It is acceptable as a diagnostic;
+            timestamp-to-clock mapping is the player model.
+          </p>
+        </div>
+        <p class="source">
+          <a href="https://developer.mozilla.org/en-US/docs/Web/API/AudioData/copyTo"
+            >AudioData.copyTo()</a
+          >
+          ·
+          <a href="https://developer.mozilla.org/en-US/docs/Web/API/BaseAudioContext/currentTime"
+            >AudioContext clock</a
+          >
+        </p>
+      </section>
+
+      <section class="chapter" id="lacing">
+        <div class="zoom">Zoom level 4 · Container bytes</div>
+        <h2>7. Only now zoom into Matroska lacing</h2>
+        <p>
+          The architecture asks the demuxer for exactly one AAC access unit per yielded packet.
+          Matroska may store several units in one block to save header space. Lacing is simply the
+          rule for recovering their byte ranges.
+        </p>
+        <pre><code>block = track VINT | signed timecode | flags | lace header? | frame data
+lacingMode = (flags &amp; 0x06) &gt;&gt; 1;</code></pre>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Value</th>
+                <th>How packet sizes are encoded</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>None</td>
+                <td>0</td>
+                <td>All bytes after flags are one packet.</td>
+              </tr>
+              <tr>
+                <td>Xiph</td>
+                <td>1</td>
+                <td>Runs of 255 plus a terminating byte for each size.</td>
+              </tr>
+              <tr>
+                <td>Fixed</td>
+                <td>2</td>
+                <td>Frame-data bytes divide equally among all packets.</td>
+              </tr>
+              <tr>
+                <td>EBML</td>
+                <td>3</td>
+                <td>First size is unsigned; following stored sizes are signed deltas.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          For laced modes, the first byte after flags is <code>packetCount - 1</code>. Size metadata
+          exists for every packet except the last, whose size is the remaining frame-data length.
+        </p>
+        <h3>EBML lacing, worked once</h3>
+        <pre><code>82 00 00 86 | 02 | 41 2C | BD | [A: 300] [B: 298] [C: 301]
+block header   count  size A   delta       compressed AAC packets</code></pre>
+        <ol>
+          <li><code>02 + 1</code> gives three packets.</li>
+          <li><code>41 2C</code> is an unsigned EBML VINT with value 300.</li>
+          <li>
+            <code>BD</code> has unsigned VINT value 61. The one-byte signed bias is 63, so the delta
+            is <code>61 - 63 = -2</code>. Packet B is 298 bytes.
+          </li>
+          <li>
+            After the lace header, 899 frame-data bytes remain. Packet C receives
+            <code>899 - 300 - 298 = 301</code>.
+          </li>
+        </ol>
+        <p>
+          For a VINT width of <code>w</code>, the signed bias is <code>2 ** (7 * w - 1) - 1</code>.
+          Do not reuse the “all ones means unknown element size” rule here: lacing VINTs are values,
+          not EBML element sizes.
+        </p>
+        <details>
+          <summary>Xiph and fixed-size validation</summary>
+          <p>
+            In Xiph lacing, keep adding bytes until a value below 255 ends the size. Thus 300 is
+            <code>FF 2D</code>, and exactly 255 is <code>FF 00</code>. In fixed-size lacing, the
+            frame-data length must divide evenly by packet count. In every mode reject truncated
+            headers, non-positive or overflowing sizes, and ranges beyond the block.
+          </p>
+        </details>
+        <div class="checkpoint">
+          <div class="label">Why this mattered in Senmei</div>
+          <p>
+            Returning early for <code>lacing !== 0</code> silently discards valid audio. A player
+            timer cannot recover packets the demuxer never yielded. Parse the layout or fail with a
+            specific unsupported-input error; never skip it as if it were another track.
+          </p>
+        </div>
+        <p class="source">
+          <a href="https://www.matroska.org/technical/notes.html#block-lacing"
+            >Matroska lacing notes</a
+          >
+          · <a href="https://www.rfc-editor.org/rfc/rfc9559.html#name-ebml-lacing">EBML lacing</a>
+        </p>
+      </section>
+
+      <section class="chapter" id="lifecycle">
+        <div class="zoom">Zoom level 2 · Return to the owner</div>
+        <h2>8. Finish the lifecycle, not just the happy path</h2>
+        <p>
+          After implementing the deep layers, return to the player contract. The session owns every
+          resource it created and must invalidate asynchronous work when playback changes.
+        </p>
+        <div class="two-col">
+          <div class="card">
+            <h3>Normal end-of-file</h3>
+            <p>
+              Stop reading, flush the decoder, let the scheduled tail play, then release resources.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Stop or replacement</h3>
+            <p>
+              Abort reads, reset/close decoding, stop remembered source nodes, and close the
+              context.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Seek</h3>
+            <p>
+              Invalidate the old generation before reading the new position; old callbacks must be
+              ignored.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Malformed input</h3>
+            <p>
+              Reject with context such as cluster offset, track number, and lacing mode. Do not call
+              it EOF.
+            </p>
+          </div>
+        </div>
+        <p>
+          An <code>AbortSignal</code> handles cooperative cancellation. A monotonically increasing
+          session or seek generation handles callbacks already queued before cancellation. Check it
+          in decoder output before scheduling anything.
+        </p>
+      </section>
+
+      <section class="chapter" id="verify">
+        <div class="zoom">Zoom level 0 · Observable result</div>
+        <h2>9. Verify from narrow contracts back to the player</h2>
+        <p>Debug in the same layered order as the architecture, not by changing random timers.</p>
+        <ol>
+          <li>
+            <strong>Demux:</strong> log packet count, byte length, timestamp, and duration. Assert
+            timestamps are monotonic and laced ranges exactly consume frame data.
+          </li>
+          <li>
+            <strong>Decode:</strong> verify <code>isConfigSupported()</code>, then log output
+            timestamp, frames, rate, and channels. Confirm outputs are closed after copying.
+          </li>
+          <li>
+            <strong>Schedule:</strong> log media timestamp, chosen context start, and
+            scheduled-ahead seconds. Confirm starts are future times during steady playback.
+          </li>
+          <li>
+            <strong>Listen:</strong> use a file with dialogue or sharp transients. Check startup,
+            several uninterrupted minutes, stop, replay, and seek.
+          </li>
+          <li>
+            <strong>Synchronize:</strong> compare a visible impact or mouth movement against sound.
+            Smooth but shifted audio is still wrong.
+          </li>
+        </ol>
+        <div class="contract">
+          <div class="label">Reading symptoms</div>
+          <p>
+            Silence with no decoded output points upward toward demux/configuration. Decoded output
+            with silence points downward toward context state, copying, connection, or scheduling.
+            Chopping points to scheduling lead or starvation. Smooth drift points to timestamp math,
+            sample rate, or clock mapping.
+          </p>
+        </div>
+        <p>
+          The implementation is done when the original product behavior holds—not when a byte parser
+          passes in isolation. Work top down to decide responsibilities, bottom up to verify each
+          contract, then return to the player and listen.
+        </p>
+      </section>
+
+      <footer>
+        Written against Senmei's current AAC-LC → WebCodecs → Web Audio path. External links are
+        references; the guide itself works offline.
+      </footer>
+    </main>
+  </body>
 </html>
