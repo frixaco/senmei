@@ -1,0 +1,1046 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A top-down guide to Senmei's subtitle path: player behavior, shared timing, cue management, ASS interpretation, and Matroska blocks."
+    />
+    <title>Build Senmei's subtitle path, top down</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #172b2a;
+        --muted: #586b69;
+        --paper: #f7faf8;
+        --white: #ffffff;
+        --nav: #102927;
+        --nav-line: #31504c;
+        --accent: #087866;
+        --bright: #8ee6b4;
+        --amber: #9a5b00;
+        --line: #d5e1dd;
+        --soft: #ebf7f2;
+        --soft-amber: #fff9ed;
+        --code: #112a28;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 24px;
+      }
+
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font:
+          17px/1.72 Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      a {
+        color: var(--accent);
+        text-underline-offset: 3px;
+      }
+
+      :focus-visible {
+        outline: 3px solid #d6851f;
+        outline-offset: 4px;
+      }
+
+      .skip {
+        position: fixed;
+        z-index: 10;
+        left: 16px;
+        top: -100px;
+        padding: 10px 14px;
+        background: white;
+      }
+
+      .skip:focus {
+        top: 10px;
+      }
+
+      aside {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: 270px;
+        overflow: auto;
+        padding: 30px 24px;
+        background: var(--nav);
+        color: #dcece8;
+      }
+
+      .brand {
+        margin-bottom: 5px;
+        color: white;
+        font-size: 21px;
+        font-weight: 760;
+      }
+
+      .brand span {
+        color: var(--bright);
+      }
+
+      .side-kicker {
+        margin: 0 0 26px;
+        color: #a6c0bb;
+        font-size: 13px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      nav a {
+        display: block;
+        padding: 8px 0;
+        color: #dcece8;
+        font-size: 14px;
+        line-height: 1.4;
+        text-decoration: none;
+      }
+
+      nav a:hover {
+        color: white;
+        text-decoration: underline;
+      }
+
+      .side-note {
+        margin-top: 24px;
+        padding-top: 19px;
+        border-top: 1px solid var(--nav-line);
+        color: #acc2bd;
+        font-size: 13px;
+      }
+
+      main {
+        max-width: 1180px;
+        margin-left: 270px;
+        padding: 50px clamp(28px, 6vw, 88px) 72px;
+      }
+
+      header,
+      .chapter,
+      footer {
+        max-width: 880px;
+      }
+
+      .eyebrow,
+      .zoom {
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 760;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 810px;
+        margin: 12px 0 22px;
+        font-size: clamp(36px, 5.2vw, 62px);
+        line-height: 1.07;
+        letter-spacing: -0.045em;
+      }
+
+      h2 {
+        margin: 7px 0 18px;
+        font-size: clamp(25px, 3vw, 34px);
+        line-height: 1.25;
+        letter-spacing: -0.018em;
+      }
+
+      h3 {
+        margin: 29px 0 9px;
+        font-size: 20px;
+        line-height: 1.4;
+      }
+
+      p {
+        margin: 13px 0;
+      }
+
+      .intro {
+        max-width: 800px;
+        font-size: 20px;
+        line-height: 1.6;
+      }
+
+      .chapter {
+        margin-top: 48px;
+        padding-top: 36px;
+        border-top: 1px solid var(--line);
+      }
+
+      code {
+        border-radius: 4px;
+        background: #e3eeeb;
+        padding: 2px 5px;
+        font:
+          0.88em/1.5 "SFMono-Regular",
+          Consolas,
+          monospace;
+        overflow-wrap: anywhere;
+      }
+
+      pre {
+        margin: 20px 0;
+        overflow: auto;
+        border: 1px solid #29433f;
+        border-radius: 8px;
+        background: var(--code);
+        color: #e6f2ef;
+        padding: 19px 21px;
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      pre code {
+        padding: 0;
+        background: none;
+        color: inherit;
+        font: inherit;
+        overflow-wrap: normal;
+      }
+
+      .architecture {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin: 27px 0;
+        overflow: hidden;
+        border-radius: 8px;
+        background: var(--nav);
+        color: #eaf5f2;
+      }
+
+      .architecture div {
+        position: relative;
+        min-height: 132px;
+        padding: 18px;
+        border-right: 1px solid var(--nav-line);
+      }
+
+      .architecture div:last-child {
+        border: 0;
+      }
+
+      .architecture div:not(:last-child)::after {
+        position: absolute;
+        z-index: 2;
+        top: 52px;
+        right: -9px;
+        content: "→";
+        color: var(--bright);
+        font-weight: 800;
+      }
+
+      .architecture b {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--bright);
+        font-size: 15px;
+      }
+
+      .architecture span {
+        display: block;
+        font-size: 14px;
+        line-height: 1.48;
+      }
+
+      .contract,
+      .note,
+      .warning,
+      .checkpoint {
+        margin: 22px 0;
+        border: 1px solid var(--line);
+        border-left: 4px solid var(--accent);
+        border-radius: 0 7px 7px 0;
+        background: white;
+        padding: 16px 20px;
+      }
+
+      .contract,
+      .checkpoint {
+        background: var(--soft);
+      }
+
+      .warning {
+        border-left-color: var(--amber);
+        background: var(--soft-amber);
+      }
+
+      .label {
+        margin-bottom: 7px;
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 780;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .warning .label {
+        color: var(--amber);
+      }
+
+      .contract p:last-child,
+      .note p:last-child,
+      .warning p:last-child,
+      .checkpoint p:last-child {
+        margin-bottom: 0;
+      }
+
+      .two-col {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        margin: 20px 0;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: white;
+        padding: 17px 19px;
+      }
+
+      .card h3 {
+        margin-top: 0;
+        font-size: 17px;
+      }
+
+      .card p {
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+
+      ol,
+      ul {
+        padding-left: 24px;
+      }
+
+      li {
+        margin: 9px 0;
+      }
+
+      .table-wrap {
+        margin: 18px 0;
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        font-size: 15px;
+        text-align: left;
+      }
+
+      th,
+      td {
+        padding: 11px 13px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+
+      th {
+        background: #e5efec;
+      }
+
+      details {
+        margin: 15px 0;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: white;
+        padding: 12px 16px;
+      }
+
+      summary {
+        cursor: pointer;
+        font-size: 15px;
+        font-weight: 680;
+      }
+
+      .source {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .source a {
+        color: #3f7168;
+      }
+
+      footer {
+        margin-top: 42px;
+        padding-top: 20px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      @media (max-width: 940px) {
+        aside {
+          position: static;
+          width: auto;
+          padding: 22px 25px;
+        }
+
+        .side-kicker {
+          margin-bottom: 13px;
+        }
+
+        nav {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 0 18px;
+        }
+
+        .side-note {
+          display: none;
+        }
+
+        main {
+          margin: 0;
+          padding: 38px 25px 58px;
+        }
+      }
+
+      @media (max-width: 680px) {
+        body {
+          font-size: 16px;
+        }
+
+        main {
+          padding: 30px 18px 48px;
+        }
+
+        nav,
+        .architecture,
+        .two-col {
+          grid-template-columns: 1fr;
+        }
+
+        .architecture div {
+          min-height: 0;
+          border-right: 0;
+          border-bottom: 1px solid var(--nav-line);
+        }
+
+        .architecture div:not(:last-child)::after {
+          top: auto;
+          right: 20px;
+          bottom: -13px;
+          content: "↓";
+        }
+
+        pre {
+          margin-inline: -6px;
+          padding: 16px;
+        }
+      }
+
+      @media print {
+        aside,
+        .skip {
+          display: none;
+        }
+
+        body {
+          background: white;
+          color: black;
+          font: 11pt/1.55 sans-serif;
+        }
+
+        main {
+          max-width: none;
+          margin: 0;
+          padding: 0;
+        }
+
+        h2,
+        h3,
+        pre,
+        .contract,
+        .note,
+        .warning,
+        .checkpoint {
+          break-inside: avoid;
+        }
+
+        pre,
+        .architecture {
+          background: #eee;
+          color: black;
+        }
+
+        .architecture b {
+          color: black;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to the guide</a>
+    <aside>
+      <div class="brand">senmei<span> / </span>subtitles</div>
+      <p class="side-kicker">Top-down field guide</p>
+      <nav aria-label="Sections">
+        <a href="#goal">1. Define “working”</a>
+        <a href="#shape">2. Draw the whole path</a>
+        <a href="#orchestrator">3. Write the controller</a>
+        <a href="#render">4. Render active cues</a>
+        <a href="#timeline">5. Build the timeline</a>
+        <a href="#ass">6. Interpret ASS</a>
+        <a href="#demux">7. Demux timed packets</a>
+        <a href="#bytes">8. Parse block bytes</a>
+        <a href="#lifecycle">9. Own the lifecycle</a>
+        <a href="#verify">10. Verify in layers</a>
+      </nav>
+      <p class="side-note">
+        Start with what the viewer sees.<br />Reach EBML bytes only after every boundary has a job.
+      </p>
+    </aside>
+
+    <main id="main">
+      <header>
+        <div class="eyebrow">Senmei implementation guide</div>
+        <h1>Build subtitles from the screen back to the file.</h1>
+        <p class="intro">
+          Do not start with Block headers. Start with the viewer: the selected dialogue appears over
+          the final picture at the right movie time, overlapping cues survive, and old text cannot
+          leak across a seek or file change. Then work downward until the design finally asks for
+          bytes.
+        </p>
+        <div class="note">
+          <div class="label">Scope</div>
+          <p>
+            Senmei currently recognizes <code>S_TEXT/ASS</code>. This guide builds a safe plain-text
+            renderer while preserving enough ASS metadata to replace it with a full renderer later.
+            WebCodecs is not involved: ASS packets are text, not compressed audio or video.
+          </p>
+        </div>
+      </header>
+
+      <section class="chapter" id="goal">
+        <div class="zoom">Zoom level 0 · Product behavior</div>
+        <h2>1. First define what “subtitles work” means</h2>
+        <p>A complete first milestone has observable behavior, not merely parsed strings:</p>
+        <ol>
+          <li>The user can choose a subtitle track or turn subtitles off.</li>
+          <li>Text appears and disappears according to the same media clock as the movie.</li>
+          <li>Every cue active at that instant is rendered; one cue does not hide another.</li>
+          <li>The overlay follows the displayed picture through resize and fullscreen.</li>
+          <li>Subtitle failure does not stop audio or video.</li>
+          <li>Stop, seek, track switch, and new playback immediately invalidate old cues.</li>
+        </ol>
+        <p>
+          This tells us what the system needs: track selection, a shared clock, timed cues, a visual
+          plane, bounded read-ahead, and a session lifecycle. None of that belongs in an EBML VINT
+          helper.
+        </p>
+        <div class="warning">
+          <div class="label">The central distinction</div>
+          <p>
+            Packet arrival time is not display time. A cue may be read thirty seconds early or half
+            a second late; only its media interval decides whether it belongs on screen.
+          </p>
+        </div>
+      </section>
+
+      <section class="chapter" id="shape">
+        <div class="zoom">Zoom level 1 · System</div>
+        <h2>2. Give every layer one job</h2>
+        <div class="architecture" aria-label="Subtitle data path">
+          <div>
+            <b>MKV demuxer</b><span>Yields selected-track bytes with start and end times.</span>
+          </div>
+          <div><b>ASS interpreter</b><span>Turns packet fields into a renderable cue.</span></div>
+          <div><b>Timeline</b><span>Buffers future cues and selects all active cues.</span></div>
+          <div><b>Renderer</b><span>Places safe text above the final picture.</span></div>
+        </div>
+        <p>The player sits above those layers and supplies the clock and lifecycle:</p>
+        <pre><code>Player session
+├── shared media clock ───────────────┐
+├── video renderer                    │
+├── audio scheduler                   │
+└── subtitle controller               │
+    ├── producer: MKV → ASS → cues    │
+    └── update(nowUs): timeline → DOM ◀┘</code></pre>
+        <div class="contract">
+          <div class="label">Boundary rule</div>
+          <p>
+            The MKV reader does not touch the DOM. The ASS interpreter does not invent timing. The
+            renderer does not know about Clusters. The subtitle controller does not create a second
+            playback clock.
+          </p>
+        </div>
+      </section>
+
+      <section class="chapter" id="orchestrator">
+        <div class="zoom">Zoom level 2 · Control flow</div>
+        <h2>3. Make the controller small enough to understand</h2>
+        <p>The player's desired interface is more useful than a giant implementation:</p>
+        <pre><code>type SubtitleController = {
+  update(nowUs: number): void;
+  seek(targetUs: number): Promise&lt;void&gt;;
+  select(trackIndex: number | null): Promise&lt;void&gt;;
+  stop(): void;
+};
+
+const subtitles = createSubtitleController(mkv, overlay, reportError);
+await subtitles.select(defaultTrackIndex);
+
+// The existing player tick owns time:
+subtitles.update(playerClock.nowUs());</code></pre>
+        <p>
+          <code>select()</code> starts an asynchronous producer for one track. It returns after the
+          session is ready, not after the entire subtitle stream has been read.
+          <code>update()</code> is synchronous and never waits for file or network I/O.
+          <code>stop()</code> clears the overlay immediately and invalidates pending work.
+        </p>
+        <h3>Producer and consumer run at different rates</h3>
+        <div class="two-col">
+          <div class="card">
+            <h3>Producer</h3>
+            <p>Reads packets, interprets ASS, and fills a bounded future-cue buffer.</p>
+          </div>
+          <div class="card">
+            <h3>Consumer</h3>
+            <p>Receives current media time, expires old cues, and renders active ones.</p>
+          </div>
+        </div>
+        <p>
+          Bound read-ahead by media horizon as well as cue count. One hundred dialogue cues can
+          cover minutes, while one hundred karaoke fragments may cover seconds. A target such as
+          “read until at least 30 seconds beyond <code>nowUs</code>” describes the actual resource
+          policy.
+        </p>
+        <div class="warning">
+          <div class="label">Do not bolt on a second animation loop</div>
+          <p>
+            Video, audio, and subtitles need one media timeline. A separate subtitle
+            <code>requestAnimationFrame</code> with its own start time creates drift and makes pause
+            or seek coordination harder.
+          </p>
+        </div>
+      </section>
+
+      <section class="chapter" id="render">
+        <div class="zoom">Zoom level 3 · Visual output</div>
+        <h2>4. Render all cues active at the current time</h2>
+        <p>Use half-open intervals: a cue is active at <code>startUs ≤ nowUs &lt; endUs</code>.</p>
+        <pre><code>function update(nowUs: number) {
+  cues = cues.filter((cue) =&gt; cue.endUs &gt; nowUs);
+
+  const active = cues
+    .filter((cue) =&gt; cue.startUs &lt;= nowUs)
+    .sort((a, b) =&gt; a.layer - b.layer || a.readOrder - b.readOrder);
+
+  renderer.render(active);
+}</code></pre>
+        <p>
+          The first filter removes only expired cues; future cues remain buffered. Selecting all
+          matching cues preserves overlapping dialogue, signs, and multi-speaker events. An
+          exclusive end prevents the old cue lingering when another begins at exactly its end.
+        </p>
+        <h3>Place one overlay above the composed player</h3>
+        <p>
+          In Senmei, the split comparison is one visual composition. Put the subtitle layer inside
+          the positioned <code>#comparison</code> wrapper, after both viewports, rather than inside
+          either clipped half:
+        </p>
+        <pre><code>&lt;div id="comparison"&gt;
+  &lt;div id="originalViewport"&gt;…&lt;/div&gt;
+  &lt;div id="upscaledViewport"&gt;…&lt;/div&gt;
+  &lt;div id="subtitleOverlay" aria-live="off"&gt;&lt;/div&gt;
+&lt;/div&gt;</code></pre>
+        <pre><code>#comparison { position: relative; }
+
+#subtitleOverlay {
+  position: absolute;
+  z-index: 4;
+  inset: auto 5% 5%;
+  color: white;
+  text-align: center;
+  white-space: pre-wrap;
+  pointer-events: none;
+  text-shadow: -1px -1px 1px black, 1px 1px 1px black, 0 2px 4px black;
+}</code></pre>
+        <p>
+          Set <code>textContent</code>, never <code>innerHTML</code>. Subtitle bytes are untrusted
+          media, not page markup. Update the DOM only when the active cue set changes.
+        </p>
+        <div class="checkpoint">
+          <div class="label">Rendering invariant</div>
+          <p>
+            The overlay covers the displayed picture once, remains outside the Anime4K texture
+            pipeline so glyphs stay crisp, and is included in the element entered into fullscreen.
+          </p>
+        </div>
+      </section>
+
+      <section class="chapter" id="timeline">
+        <div class="zoom">Zoom level 3 · Timeline contract</div>
+        <h2>5. Keep timing and presentation metadata together</h2>
+        <p>The timeline should receive a complete cue, not raw text:</p>
+        <pre><code>type SubtitleCue = {
+  startUs: number;
+  endUs: number;
+  readOrder: number;
+  layer: number;
+  style: string;
+  text: string;
+  raw: string;
+};</code></pre>
+        <p>
+          A plain-text renderer may use only <code>text</code>, timing, layer, and read order today.
+          Keeping style and raw event data prevents this temporary renderer from becoming the
+          permanent data model.
+        </p>
+        <h3>Use the player's clock</h3>
+        <p>
+          <code>requestAnimationFrame</code> tells the player when it can paint; it does not tell
+          the player what movie time it is. Ask a shared player clock for <code>nowUs</code>. During
+          pause, that value freezes. On seek, it jumps. If audio becomes master, map the
+          <code>AudioContext</code> clock to media time once and let video and subtitles use that
+          mapping.
+        </p>
+        <pre><code>function playerTick() {
+  const nowUs = playerClock.nowUs();
+  subtitles.update(nowUs);
+  video.renderDueFrame(nowUs);
+  requestAnimationFrame(playerTick);
+}</code></pre>
+        <p>
+          Run subtitle expiry even when the video queue is temporarily empty. Otherwise stale text
+          can remain forever during a video stall.
+        </p>
+      </section>
+
+      <section class="chapter" id="ass">
+        <div class="zoom">Zoom level 4 · Format interpretation</div>
+        <h2>6. Interpret an ASS event without confusing it with a file line</h2>
+        <p>
+          In a standalone <code>.ass</code> file, a <code>Dialogue:</code> line contains start and
+          end fields. Matroska stores timing in the Block, so an embedded ASS event has nine fields:
+        </p>
+        <pre><code>ReadOrder,Layer,Style,Name,MarginL,MarginR,MarginV,Effect,Text
+12,0,Default,,0,0,0,,Hello, Emilia!\N{\i1}Are you okay?</code></pre>
+        <p>
+          Text may contain commas. Split at the first eight commas and preserve the entire remainder
+          as field 9:
+        </p>
+        <pre><code>function splitAssEvent(event: string): string[] {
+  const fields: string[] = [];
+  let start = 0;
+
+  for (let i = 0; i &lt; 8; i++) {
+    const comma = event.indexOf(",", start);
+    if (comma === -1) throw new Error("ASS event has fewer than 9 fields");
+    fields.push(event.slice(start, comma));
+    start = comma + 1;
+  }
+
+  fields.push(event.slice(start));
+  return fields;
+}</code></pre>
+        <h3>Be explicit about plain-text loss</h3>
+        <ul>
+          <li><code>\N</code> becomes a forced newline.</li>
+          <li><code>\n</code> can become a space for the first version.</li>
+          <li><code>\h</code> becomes a nonbreaking space.</li>
+          <li>
+            Override tags such as <code>{\i1}</code> can be stripped, knowingly losing styling.
+          </li>
+          <li>
+            Events that enable drawing mode with <code>\p1</code> or above are not text; skip them.
+          </li>
+        </ul>
+        <pre><code>function packetToCue(packet: SubtitlePacket): SubtitleCue | null {
+  const raw = new TextDecoder("utf-8", { fatal: true }).decode(packet.data);
+  const fields = splitAssEvent(raw);
+  const text = toPlainAssText(fields[8]!);
+  if (text === null || text === "") return null;
+
+  return {
+    startUs: packet.startUs,
+    endUs: packet.endUs,
+    readOrder: parseInteger(fields[0]!),
+    layer: parseInteger(fields[1]!),
+    style: fields[2]!,
+    text,
+    raw,
+  };
+}</code></pre>
+        <p>
+          Use fatal UTF-8 decoding so corrupted data becomes an error instead of silently changing
+          dialogue. The track's <code>CodecPrivate</code> contains the ASS script header, including
+          styles and script resolution. Preserve it at track scope; it is configuration, not a cue.
+        </p>
+        <div class="warning">
+          <div class="label">Know when to stop extending regexes</div>
+          <p>
+            Positioning, layers, script coordinates, karaoke, vector drawings, style inheritance,
+            and attached fonts form a rendering system. For real ASS fidelity, integrate libass or
+            an equivalent maintained renderer rather than growing the plain-text sanitizer forever.
+          </p>
+        </div>
+      </section>
+
+      <section class="chapter" id="demux">
+        <div class="zoom">Zoom level 4 · Container boundary</div>
+        <h2>7. Make the demuxer yield complete timed packets</h2>
+        <p>Now the ASS interpreter tells us exactly what it needs:</p>
+        <pre><code>type SubtitlePacket = {
+  data: Uint8Array;  // exactly one embedded ASS event
+  startUs: number;
+  endUs: number;
+};</code></pre>
+        <p>
+          <code>getSubtitleData(index)</code> belongs beside the audio and video generators. It
+          walks Segment children and Clusters, filters by the selected track's Matroska track
+          number, and yields packets in media order. The caller's subtitle-array index is not the
+          same as the track number stored in a Block.
+        </p>
+        <h3>Start and duration come from different elements</h3>
+        <pre><code>startUs =
+  (clusterTimestamp + signedBlockTimestamp) * timestampScaleNs / 1_000;
+
+durationUs = blockDurationTicks * timestampScaleNs / 1_000;
+endUs = startUs + durationUs;</code></pre>
+        <p>
+          <code>BlockDuration</code> is a sibling of <code>Block</code> inside a
+          <code>BlockGroup</code>. Do not throw away the group after finding its Block. When
+          <code>BlockDuration</code> is absent, track-level <code>DefaultDuration</code> is already
+          in nanoseconds, so convert it with <code>/ 1_000</code> and do not apply
+          <code>TimestampScale</code> again.
+        </p>
+        <p>
+          If neither duration exists, report an unsupported-duration error for this implementation.
+          Do not guess the cue end from the next cue: events can overlap, and the next event may be
+          far away.
+        </p>
+        <h3>Walk the Segment, not an imagined Cluster-only stream</h3>
+        <ol>
+          <li>Start at the first Cluster offset.</li>
+          <li>Inspect each Segment child; skip known-size non-Cluster elements.</li>
+          <li>Within a Cluster, inspect <code>SimpleBlock</code> and <code>BlockGroup</code>.</li>
+          <li>
+            Parse enough of the Block header to filter by track before reading its whole payload.
+          </li>
+          <li>Resolve duration, calculate microsecond times, and yield the event bytes.</li>
+          <li>
+            End normally only at the Segment boundary or real EOF; malformed input is not EOF.
+          </li>
+        </ol>
+        <div class="contract">
+          <div class="label">First-version limits should be loud</div>
+          <p>
+            If track timestamp scaling, content encodings, unknown-size traversal, or subtitle
+            lacing is not implemented, reject that selected track with a precise error. Silently
+            skipping its packets produces a believable but wrong player.
+          </p>
+        </div>
+      </section>
+
+      <section class="chapter" id="bytes">
+        <div class="zoom">Zoom level 5 · Block bytes</div>
+        <h2>8. Only now parse the Block header</h2>
+        <p>
+          The EBML element parser has already located the Block payload. At
+          <code>block.dataStart</code>, a second header begins:
+        </p>
+        <pre><code>[track VINT][signed relative time: 2 bytes][flags: 1 byte][event bytes…]
+83          FF 06                           00            31 32 2C 30…
+track 3     -250 ticks                      no lacing     "12,0…"</code></pre>
+        <ol>
+          <li>Decode the track-number VINT and retain its byte width.</li>
+          <li>Read the next two bytes as a signed big-endian 16-bit integer.</li>
+          <li>Read flags and extract lacing with <code>(flags &amp; 0x06) &gt;&gt; 1</code>.</li>
+          <li>The packet region begins after <code>trackWidth + 3</code> bytes.</li>
+        </ol>
+        <pre><code>const track = await readTrackNumberVint(block.dataStart);
+const timeOffset = block.dataStart + track.width;
+
+if (timeOffset + 3 &gt; block.end) throw new Error("Truncated Block header");
+
+const unsigned = await parseNumberAt(timeOffset, 2);
+const relativeTimestamp = unsigned &gt;= 0x8000
+  ? unsigned - 0x10000
+  : unsigned;
+
+const flags = await parseNumberAt(timeOffset + 2, 1);
+const lacing = (flags &amp; 0x06) &gt;&gt; 1;
+const payloadStart = timeOffset + 3;</code></pre>
+        <p>
+          Do not hard-code a one-byte track number. Do not use an EBML element-size helper that maps
+          all-one value bits to “unknown size”: track-number VINTs are values, and zero is invalid.
+          Read exactly <code>block.end - payloadStart</code> bytes only after confirming the
+          selected track and supported lacing mode.
+        </p>
+        <div class="checkpoint">
+          <div class="label">Worked timing check</div>
+          <p>
+            With Cluster Timestamp 10000, relative timestamp −250, TimestampScale 1,000,000 ns, and
+            BlockDuration 1800 ticks: start is 9.75 s, duration is 1.8 s, and end is 11.55 s.
+          </p>
+        </div>
+        <p class="source">
+          <a href="https://www.matroska.org/technical/notes.html"
+            >Matroska Block and timestamp notes</a
+          >
+          ·
+          <a href="https://www.matroska.org/technical/subtitles.html#ssaass-subtitles"
+            >ASS mapping in Matroska</a
+          >
+        </p>
+      </section>
+
+      <section class="chapter" id="lifecycle">
+        <div class="zoom">Zoom level 2 · Return to the owner</div>
+        <h2>9. Treat seek and replacement as new sessions</h2>
+        <p>
+          The controller must own stale asynchronous work. Use an <code>AbortController</code> where
+          the backend supports it, plus a monotonically increasing generation for results already in
+          flight:
+        </p>
+        <pre><code>async function select(trackIndex: number | null) {
+  const generation = ++currentGeneration;
+  clearTimelineAndOverlay();
+  if (trackIndex === null) return;
+
+  for await (const packet of mkv.getSubtitleData(trackIndex)) {
+    if (generation !== currentGeneration) break;
+    await waitForReadAheadCapacity();
+    if (generation !== currentGeneration) break;
+    const cue = packetToCue(packet);
+    if (cue) timeline.add(cue);
+  }
+}</code></pre>
+        <div class="two-col">
+          <div class="card">
+            <h3>Track off / switch</h3>
+            <p>
+              Invalidate the producer, clear cues and DOM immediately, then start the new track.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Backward seek</h3>
+            <p>
+              Discard the forward-only queue and repopulate from an indexed point before the target.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Forward seek</h3>
+            <p>
+              Drop expired cues and reposition reading; scanning from file start is only a
+              prototype.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Subtitle error</h3>
+            <p>Disable that track and report it without tearing down healthy audio and video.</p>
+          </div>
+        </div>
+        <p>
+          EOF stops the producer, not the timeline. Buffered final cues remain eligible until their
+          end times. A stopped or replaced generation, by contrast, clears them immediately.
+        </p>
+      </section>
+
+      <section class="chapter" id="verify">
+        <div class="zoom">Zoom level 0 · Observable result</div>
+        <h2>10. Verify from contracts back to the screen</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Check</th>
+                <th>Expected result</th>
+                <th>Likely bug caught</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>83 FF 06 00</code></td>
+                <td>Track 3, −250 ticks, payload offset 4</td>
+                <td>VINT width, signed time, offset</td>
+              </tr>
+              <tr>
+                <td>Scale 1,000,000; start 10000 − 250; duration 1800</td>
+                <td>9.75 s → 11.55 s</td>
+                <td>Unit conversion</td>
+              </tr>
+              <tr>
+                <td><code>Hello, Emilia!\NYes.</code></td>
+                <td>Comma preserved; two lines</td>
+                <td>Naive ASS splitting</td>
+              </tr>
+              <tr>
+                <td>A [1,3), B [2.5,4)</td>
+                <td>Both at 2.5; only B at 3; none at 4</td>
+                <td>Single-cue or inclusive-end logic</td>
+              </tr>
+              <tr>
+                <td>Late cue [1,2), now 5</td>
+                <td>Never flashes</td>
+                <td>Rendering on arrival</td>
+              </tr>
+              <tr>
+                <td>Text contains <code>&lt;img onerror=…&gt;</code></td>
+                <td>Literal text only</td>
+                <td>Unsafe innerHTML</td>
+              </tr>
+              <tr>
+                <td>Switch track during a pending read</td>
+                <td>Old result never appears</td>
+                <td>Missing generation check</td>
+              </tr>
+              <tr>
+                <td>Video queue stalls past cue end</td>
+                <td>Overlay still clears</td>
+                <td>Update tied to frame availability</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Diagnose a blank overlay in order</h3>
+        <ol>
+          <li>Did the selected array index resolve to the intended Matroska track number?</li>
+          <li>Did the demuxer yield bytes and valid start/end times?</li>
+          <li>Did field 9 contain renderable text rather than a drawing event?</li>
+          <li>Are cue times and <code>nowUs</code> on the same microsecond timeline?</li>
+          <li>Is the cue active at the inspected instant?</li>
+          <li>Does the overlay contain text but sit behind or outside the visible picture?</li>
+        </ol>
+        <div class="contract">
+          <div class="label">Done means behavior, not parsing</div>
+          <p>
+            Correct dialogue appears and expires with the movie, overlaps survive, the overlay
+            follows resize/fullscreen, subtitle failure leaves playback alive, and old sessions
+            cannot repaint. ASS styling fidelity is a separate milestone.
+          </p>
+        </div>
+        <p>
+          Work top down to assign responsibilities, verify the deep contracts independently, then
+          return to the screen. If the viewer-visible promise fails, the feature is not finished no
+          matter how convincing the Block parser looks.
+        </p>
+      </section>
+
+      <footer>
+        Written against Senmei's current <code>S_TEXT/ASS</code> metadata path and player layout.
+        External links are references; the guide itself works offline.
+      </footer>
+    </main>
+  </body>
+</html>

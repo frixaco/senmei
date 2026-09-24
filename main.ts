@@ -116,13 +116,19 @@ export async function play(source: string | Blob) {
   const matroska = openMatroska(reader);
 
   const mkv = await matroska.init();
+
+  status.textContent = "Playing";
+
   playVideo(mkv);
-  status.textContent = "Playing video";
-  // Audio playback is still being developed. Enable this call to test it.
   await playAudio(mkv);
+  playSubtitles(mkv)
 }
 
-// eslint-disable-next-line no-unused-vars -- Audio work is kept here for manual testing.
+async function playSubtitles(mkv: Awaited<ReturnType<ReturnType<typeof openMatroska>["init"]>>) {
+  const trackIndex = 0;
+  const nextChunk = mkv.getSubtitleData(trackIndex);
+}
+
 async function playAudio(mkv: Awaited<ReturnType<ReturnType<typeof openMatroska>["init"]>>) {
   const audio = new AudioContext();
   await audio.resume();

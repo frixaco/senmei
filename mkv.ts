@@ -481,6 +481,11 @@ export function openMatroska(reader: BufferedReader) {
         videos,
         subtitles,
 
+        async *getSubtitleData(index: number) {
+          const track = this.audios[index]!;
+          // subtitle duration: BlockDuration -> DefaultDuration on track -> next Block.startUs -> final block = reject or smth
+        },
+
         async *getAudioData(index: number) {
           const track = this.audios[index]!;
 
@@ -682,7 +687,8 @@ export function openMatroska(reader: BufferedReader) {
             const flagsByte = await parseNumberAt(flagsOffset, 1);
             const lacing = (flagsByte & 0x06) >> 1;
 
-            if (lacing !== 0) return null;
+            // TODO: add support for video lacing
+            if (lacing !== 0) throw new Error("Video lacing not supported");
 
             return {
               trackNumber,
