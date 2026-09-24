@@ -93,8 +93,8 @@ ctx.configure({
 });
 
 const sampler = device.createSampler({
-  magFilter: "nearest",
-  minFilter: "nearest",
+  magFilter: "linear",
+  minFilter: "linear",
   addressModeU: "clamp-to-edge",
   addressModeV: "clamp-to-edge",
 });
