@@ -13,13 +13,13 @@
     "typecheck": "tsgo --noEmit"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "4.3.1",
-    "@types/node": "^26.1.0",
-    "@typescript/native-preview": "^7.0.0-dev.20260706.1",
-    "@webgpu/types": "^0.1.71",
-    "oxfmt": "^0.56.0",
-    "oxlint": "^1.71.0",
-    "tailwindcss": "4.3.1",
-    "vite": "^8.1.0"
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "^26.6.3",
+    "@typescript/native-preview": "^7.0.0-dev.20260707.2",
+    "@webgpu/types": "^0.1.74",
+    "oxfmt": "^0.71.0",
+    "oxlint": "^1.86.0",
+    "tailwindcss": "4.3.3",
+    "vite": "^8.3.1"
   }
 }
