@@ -119,15 +119,136 @@ export async function play(source: string | Blob) {
 
   status.textContent = "Playing";
 
-  playVideo(mkv);
+  const subtitles = await playSubtitles(mkv);
+  playVideo(mkv, subtitles);
   await playAudio(mkv);
-  playSubtitles(mkv);
 }
 
-async function playSubtitles(mkv: Awaited<ReturnType<ReturnType<typeof openMatroska>["init"]>>) {
+type SubtitleRenderer = {
+  render: (nowUs: number) => void;
+};
+
+async function playSubtitles(
+  mkv: Awaited<ReturnType<ReturnType<typeof openMatroska>["init"]>>,
+): Promise<SubtitleRenderer> {
+  const canvas = getElementById<HTMLCanvasElement>("subtitleCanvas");
+  const context = canvas.getContext("2d");
+  if (context === null) throw new Error("Subtitle context null. This should not happen");
+
   const trackIndex = 0;
-  const nextChunk = mkv.getSubtitleData(trackIndex);
-  console.log(nextChunk)
+
+  function parseAssEvent(data: Uint8Array) {
+    const event = new TextDecoder("utf-8", {
+      fatal: true,
+    }).decode(data);
+
+    const fields: string[] = [];
+    let start = 0;
+
+    for (let i = 0; i < 8; i++) {
+      const comma = event.indexOf(",", start);
+
+      if (comma === -1) {
+        throw new Error("ASS event has fewer than 9 fields");
+      }
+
+      fields.push(event.slice(start, comma));
+      start = comma + 1;
+    }
+
+    fields.push(event.slice(start));
+
+    return {
+      readOrder: Number(fields[0]),
+      layer: Number(fields[1]),
+      style: fields[2]!,
+      name: fields[3]!,
+      marginLeft: Number(fields[4]),
+      marginRight: Number(fields[5]),
+      marginVertical: Number(fields[6]),
+      effect: fields[7]!,
+      text: fields[8]!,
+    };
+  }
+
+  const cues: Array<{
+    startUs: number;
+    endUs: number;
+    text: string;
+  }> = [];
+
+  async function loadCues() {
+    for await (const chunk of mkv.getSubtitleData(trackIndex)) {
+      const ass = parseAssEvent(chunk.data);
+
+      const text = ass.text
+        .replace(/\{[^}]*\}/g, "")
+        .replace(/\\N/g, "\n")
+        .replace(/\\n/g, " ")
+        .replace(/\\h/g, "\u00a0");
+
+      cues.push({
+        startUs: chunk.timestamp,
+        endUs: chunk.timestamp + chunk.duration,
+        text,
+      });
+    }
+  }
+
+  void loadCues().catch((e) => {
+    console.error("Subtitle loading failed", e);
+  });
+
+  let lastText = "";
+
+  function render(nowUs: number) {
+    if (context === null) throw new Error("Subtitle context null. This should not happen");
+
+    const dpr = devicePixelRatio;
+    const width = Math.round(canvas.clientWidth * dpr);
+    const height = Math.round(canvas.clientHeight * dpr);
+
+    const resized = canvas.width !== width || canvas.height !== height;
+
+    if (resized) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+
+    const text = cues
+      .filter((cue) => cue.startUs <= nowUs && nowUs < cue.endUs)
+      .map((cue) => cue.text)
+      .join("\n");
+
+    if (!resized && text === lastText) return;
+
+    lastText = text;
+    context.clearRect(0, 0, width, height);
+    if (text === "") return;
+
+    const fontSize = 32 * dpr;
+    const lineHeight = fontSize * 1.25;
+    const lines = text.split("\n");
+    const bottom = height * 0.92;
+    const firstLineY = bottom - (lines.length - 1) * lineHeight;
+
+    context.font = `600 ${fontSize}px sans-serif`;
+    context.textAlign = "center";
+    context.textBaseline = "alphabetic";
+    context.lineJoin = "round";
+    context.strokeStyle = "black";
+    context.lineWidth = 5 * dpr;
+    context.fillStyle = "white";
+
+    lines.forEach((line, index) => {
+      const y = firstLineY + index * lineHeight;
+
+      context.strokeText(line, width / 2, y);
+      context.fillText(line, width / 2, y);
+    });
+  }
+
+  return { render };
 }
 
 async function playAudio(mkv: Awaited<ReturnType<ReturnType<typeof openMatroska>["init"]>>) {
@@ -215,7 +336,10 @@ async function playAudio(mkv: Awaited<ReturnType<ReturnType<typeof openMatroska>
 }
 
 // Both views use the same frame before it is released. Decode only once.
-function playVideo(mkv: Awaited<ReturnType<ReturnType<typeof openMatroska>["init"]>>) {
+function playVideo(
+  mkv: Awaited<ReturnType<ReturnType<typeof openMatroska>["init"]>>,
+  subtitles: SubtitleRenderer,
+) {
   const frames: VideoFrame[] = [];
 
   const BUFFER_SIZE = 64;
@@ -308,6 +432,8 @@ function playVideo(mkv: Awaited<ReturnType<ReturnType<typeof openMatroska>["init
     }
 
     const elapsed = (performance.now() - startedAt) * 1000;
+
+    subtitles.render(elapsed);
 
     if (elapsed < frame.timestamp) {
       requestAnimationFrame(render);
