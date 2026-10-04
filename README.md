@@ -33,6 +33,9 @@
   - Anime4K_AutoDownscalePre_x4.glsl
   - Anime4K_Upscale_CNN_x2_M.glsl
 - Maintain the WebGPU setup and Anime4K shader pipeline by hand
+- Use FP32 shader arithmetic to match GLSL. Upload the existing sRGB preview
+  canvas so the original and upscaled views share the same video color conversion;
+  direct hardware `VideoFrame` uploads can take a different browser color path.
 - Current pipeline uses `rgba16float` intermediates throughout; future parity and
   performance work may map `//!COMPONENTS 1/2` passes to narrower texture formats.
 - Write the Matroska parser with an API tuned for video players

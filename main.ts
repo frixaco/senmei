@@ -14,7 +14,7 @@ const original = getElementById<HTMLImageElement>("original");
 const canvas = getElementById<HTMLCanvasElement>("canvas")!;
 const ctx = canvas.getContext("webgpu");
 const originalVideo = getElementById<HTMLCanvasElement>("originalVideo");
-const originalVideoContext = originalVideo.getContext("2d");
+const originalVideoContext = originalVideo.getContext("2d", { colorSpace: "srgb" });
 if (!originalVideoContext) throw new Error("No original video canvas context");
 
 const status = getElementById<HTMLElement>("status");
@@ -74,12 +74,7 @@ divider.addEventListener("keydown", (event) => {
 
 const adapter = await navigator.gpu.requestAdapter();
 if (!adapter) throw new Error("no gpu adapter");
-if (!adapter.features.has("shader-f16")) {
-  throw new Error("GPU does not support shader-f16 (f16 shader math)");
-}
-const device = await adapter.requestDevice({
-  requiredFeatures: ["shader-f16"], // for macOS
-});
+const device = await adapter.requestDevice();
 
 const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
 if (!ctx) throw new Error("No WebGPU canvas context");
@@ -414,7 +409,9 @@ function playVideo(
     }
 
     originalVideoContext!.drawImage(frame, 0, 0);
-    gpuStuff(frame);
+    // Share the preview's sRGB conversion. Direct hardware VideoFrame uploads can
+    // take a different color path and brighten the image before Anime4K runs.
+    gpuStuff(originalVideo);
   };
 
   let startedAt: number | null = null;
@@ -511,11 +508,10 @@ function doWebGPU() {
   let sourceTexture: Texture | null = null;
   let finalBindGroup: GPUBindGroup | null = null;
 
-  return (original: VideoFrame) => {
-    const imageBitmap = original;
+  return (source: HTMLCanvasElement | OffscreenCanvas) => {
     const sourceSize = {
-      width: imageBitmap.displayWidth,
-      height: imageBitmap.displayHeight,
+      width: source.width,
+      height: source.height,
     };
     const outputSize = {
       width: canvas.width,
@@ -543,9 +539,9 @@ function doWebGPU() {
     }
 
     device.queue.copyExternalImageToTexture(
-      { source: imageBitmap },
+      { source },
       { texture: sourceTexture.gpu, colorSpace: "srgb", premultipliedAlpha: false },
-      [imageBitmap.displayWidth, imageBitmap.displayHeight],
+      [sourceSize.width, sourceSize.height],
     );
 
     const textures = new Map<string, Texture>([
@@ -1212,28 +1208,11 @@ const defaultFragmentShader = `
 @group(0) @binding(0) var final_texture: texture_2d<f32>;
 @group(0) @binding(1) var final_sampler: sampler;
 
-fn encode_srgb(linear_rgb: vec3f) -> vec3f {
-  let linear_segment = linear_rgb * 12.92;
-  let power_segment = 1.055 * pow(linear_rgb, vec3f(1.0 / 2.4)) - 0.055;
-  return select(linear_segment, power_segment, linear_rgb > vec3f(0.0031308));
-}
-
 @fragment
 fn fragment(@location(0) uv: vec2f) -> @location(0) vec4f {
-  let color = textureSampleLevel(final_texture, final_sampler, uv, 0.0);
-
-  // mpv runs every SDR stream through BT.1886 (gamma 2.4) -> sRGB. I skipped
-  // that and the image looked washed out. This matches mpv.
-  //
-  // This is "assume SDR", not "assume BT.709". BT.709, BT.601, sRGB all want
-  // the same 2.4 curve here, so branching on colorSpace.transfer per-SDR would
-  // be wrong, not more correct. Only HDR wants a different curve.
-  //
-  // ponytail: SDR only. When a PQ/HLG file shows up, read the transfer from
-  // VideoFrame.colorSpace — but that also means redoing the Anime4K passes and
-  // primaries (the CNN is SDR-tuned), so this final pass alone won't be enough.
-  let linear_rgb = pow(max(color.rgb, vec3f(0.0)), vec3f(2.4));
-  return vec4f(encode_srgb(linear_rgb), color.a);
+  // The source canvas is already sRGB. rgba16float preserves that encoding;
+  // the sRGB output canvas needs no extra transfer curve.
+  return textureSampleLevel(final_texture, final_sampler, uv, 0.0);
 }
 `;
 
