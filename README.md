@@ -1,94 +1,75 @@
-# Senmei - watch anime in real-time, upscaled to 4K, in your browser
+# Senmei
 
-- MKV video player with essential features like play/pause, seek, and streaming from URL
+Watch anime in real time, upscaled to 4K, in your browser.
+
+Senmei is an MKV player built from scratch: a hand-written Matroska parser, WebCodecs decoding, and Anime4K's CNN upscaling shaders ported to WGSL and run on WebGPU every frame.
+
+## Quality
+
+The same frame, as decoded (1080p) and after Senmei's Anime4K pipeline (4K). Open each image at full size to compare line work.
+
+**Original, 1080p**
+
+![Original 1080p frame](assets/senmei-original.png)
+
+**Senmei + Anime4K, 4K**
+
+![The same frame upscaled to 4K by Senmei](assets/senmei-anime4k.png)
+
+## Features
+
+- MKV playback: play/pause, seek, and streaming from a URL over HTTP Range requests
   - video: H.264/AVC (8-bit) and HEVC/H.265 (8/10-bit)
   - audio: AAC stereo
-- upscaling with WebGPU using a multi-stage, multi-pass render pipeline
-- subtitle support with positioning and plain text rendering
+- Real-time upscaling with WebGPU, using a multi-stage, multi-pass render pipeline
+- Subtitles with positioning and plain text rendering
 
-### Dependencies
+## Performance
 
-- [Bun](https://bun.sh/) - package manager and script runner
-- [Anime4K](https://github.com/bloc97/Anime4K) - High-End HQ Mode A preset
-- Chromium-based browser
-- [mediabunny](https://github.com/Vanilagy/mediabunny) - demuxing, seeking
-- `WebCodecs`, `AudioWorklet`, `Web Worker`
-- `WebGPU`, `WGSL/GLSL` shaders
-- [typegpu](https://github.com/software-mansion/TypeGPU) - WGSL authoring utilities
+Measured on 2026-10-11 on an Apple M4 Pro (Helium, WebGPU on Metal), streaming a 1.44 GB MKV over HTTP Range, 1080p → 4K, 819 frames:
 
-### Local Development
+- 32.3 ms per 4K frame, so 31 fps max (anime runs at 23.976 fps, a 41.7 ms budget)
+- 38 render passes per frame: Clamp Highlights 3, Restore CNN VL 17, Upscale CNN x2 VL 18
+- 27.3 ms in the Anime4K passes, about 4.5 ms uploading the frame, 0.46 ms on the CPU
 
-- Install deps: `bun install`
-- Start dev server: `bun run dev`
-- Build: `bun run build`
-- Preview build: `bun run preview`
+## How it works
 
-### Implementation Scope
+- **Matroska parser** ([`mkv.ts`](mkv.ts)): written by hand, with an API tuned for a video player.
+- **Decoding:** WebCodecs `VideoDecoder` and `AudioDecoder`.
+- **Upscaling:** the WebGPU setup and the Anime4K pipeline are maintained by hand. These Anime4K shaders are ported to WGSL (High-End HQ Mode A preset), in pass order:
+  1. `Anime4K_Clamp_Highlights`
+  2. `Anime4K_Restore_CNN_VL`
+  3. `Anime4K_Upscale_CNN_x2_VL`
+  4. `Anime4K_AutoDownscalePre_x2`
+  5. `Anime4K_AutoDownscalePre_x4`
+  6. `Anime4K_Upscale_CNN_x2_M`
 
-- Port these Anime4K shaders to WGSL:
-  - Anime4K_Clamp_Highlights.glsl
-  - Anime4K_Restore_CNN_VL.glsl
-  - Anime4K_Upscale_CNN_x2_VL.glsl
-  - Anime4K_AutoDownscalePre_x2.glsl
-  - Anime4K_AutoDownscalePre_x4.glsl
-  - Anime4K_Upscale_CNN_x2_M.glsl
-- Maintain the WebGPU setup and Anime4K shader pipeline by hand
-- Use FP32 shader arithmetic to match GLSL. Upload the existing sRGB preview
-  canvas so the original and upscaled views share the same video color conversion;
-  direct hardware `VideoFrame` uploads can take a different browser color path.
-- Current pipeline uses `rgba16float` intermediates throughout; future parity and
-  performance work may map `//!COMPONENTS 1/2` passes to narrower texture formats.
-- Write the Matroska parser with an API tuned for video players
-- Handle color space conversion explicitly: https://x.com/wrennly_dev/status/2039326806260748757
+  Which passes run depends on the source and output size, following the GLSL `!WHEN` conditions.
+- **Precision:** FP32 shader arithmetic to match GLSL; `rgba16float` intermediates throughout.
+- **Color:** the existing sRGB preview canvas is uploaded, so the original and upscaled views share the same video color conversion. Direct hardware `VideoFrame` uploads can take a different browser color path. More on handling color space conversion explicitly: https://x.com/wrennly_dev/status/2039326806260748757
+- **Canvas sizing:** the real source frame dimensions and the display box are kept separate. A `ResizeObserver` watches the canvas container, CSS pixels are multiplied by `devicePixelRatio` for the canvas backing size, CSS `aspect-ratio` comes from the current video frame or image dimensions, and sizing reruns on resize, fullscreen and DPR changes.
 
-### Learning Notes
+## Stack
 
-- [WebGPU and WGSL Pipeline Guide](docs/WEBGPU_WGSL_PIPELINE_GUIDE.md) -
-  project-specific mental model for implementing the Anime4K pipeline.
+- TypeScript, Vite, [Bun](https://bun.sh/)
+- WebGPU, WGSL
+- WebCodecs
+- [Anime4K](https://github.com/bloc97/Anime4K)
 
-### Canvas sizing tip
+## Local development
 
-Rendering sizing keeps the real source frame dimensions and the display box separate:
-use `ResizeObserver` to watch the canvas container, multiply CSS pixels by `devicePixelRatio` for the canvas backing size, set CSS `aspect-ratio` from the current video frame or image dimensions, and rerun the sizing function on resize, fullscreen changes, and DPR changes.
+```sh
+bun install
+bun run dev      # http://localhost:3000
+bun run build
+bun run preview
+```
 
-## Advanced Capabilities
+## TODO
 
-### Option 1: Lock-Free SharedArrayBuffer + Atomics Pipeline (Zero GC)
-
-Worker communication can use `postMessage(data, [transferable])`, which is fast but still triggers JavaScript event loop overhead.
-
-- The capability: use a single 50MB SharedArrayBuffer (SAB) as a ring buffer for the video stream.
-
-- How: Your Network Worker writes HTTP chunks directly into the SAB. Your Decoder Worker reads from the exact same memory space using Atomics.wait() and Atomics.add() to synchronize pointers without locking the thread.
-
-- Why it's impressive: This is exactly how AAA game engines handle memory. You are effectively writing a custom memory allocator in JavaScript. V8's Garbage Collector will literally never run because you never allocate a new object after startup. Memory usage becomes mathematically flat.
-
-### Option 2: Client-Side Video Scrub Previews (The "YouTube Hover" effect)
-
-Usually, to show video thumbnails when hovering over the seek bar, a backend server runs FFmpeg to generate a massive JPEG sprite sheet and sends it to the client.
-
-- The capability: generate scrubbing thumbnails entirely client-side, on-the-fly, with zero backend processing.
-
-- How you do it: You spawn a second, hidden VideoDecoder in a background worker. When the user's mouse hovers over a timestamp, you use Mediabunny to fetch only the specific I-Frame (keyframe) byte chunk for that timestamp. You decode just that one frame, scale it down using createImageBitmap, and send it to the UI to display above the cursor.
-
-- Why it's a 7/7 flex: It demonstrates absolute mastery over the demuxer and the hardware decoder. You are multiplexing two separate decode pipelines on the same file, utilizing the HTTP Range request beautifully to save bandwidth, and providing a premium UX feature for free.
-
-### Option 3: Custom TCP-Style Network Controller (EWMA Chunking)
-
-Streaming fetches should avoid arbitrary chunk sizes. If the user's internet is slow, fixed chunks can buffer; if it is fast, fixed chunks can download too far ahead and waste bandwidth when the user closes the tab early.
-
-- The capability: use an adaptive chunking algorithm with an Exponentially Weighted Moving Average (EWMA), just like real video streaming platforms (Netflix/YouTube) use for DASH.
-
-- How you do it: You monitor the exact millisecond duration of every fetch chunk. You calculate the user's real-time bandwidth. If their internet is 500Mbps, you fetch small chunks (e.g., 500KB) right before they are needed (saving you VPS money). If their internet drops to 10Mbps, you dynamically increase the chunk size and buffer aggressively to prevent a stall.
-
-- Why it's a 7/7 flex: Infrastructure engineers will drool over this. It shows you aren't just thinking about the frontend—you are optimizing cloud architecture egress costs and protecting against network volatility using classic networking algorithms.
-
-### Option 4: Perfect 23.976Hz to 60Hz/144Hz Pacing (Telecine Mitigation)
-
-Anime runs at 24000/1001 (23.976) frames per second. Monitors run at 60Hz or 144Hz. 24 does not divide evenly into 60. If you just draw the frame "when it's ready," you get telecine judder (some frames stay on screen for 2 monitor refreshes, some for 3), making panning camera shots in anime look stuttery.
-
-- The capability: use a custom WebGPU presentation scheduler.
-
-- How you do it: Instead of just relying on requestAnimationFrame, you use the Web Audio clock (which is sample-accurate to the microsecond) combined with the VideoFrame.timestamp. You calculate exactly which V-Sync cycle of the monitor the frame should appear on, and you hold the WebGPU frame in a queue until the exact nanosecond it's required.
-
-- Why it's a 7/7 flex: You have identified and solved a notorious rendering artifact (judder) that plagues even native desktop video players. It proves you understand the relationship between presentation timestamps (PTS), monitor refresh rates, and the browser's render loop.
+- [ ] Map `//!COMPONENTS 1/2` passes to narrower texture formats instead of `rgba16float` everywhere.
+- [ ] Play audio through an `AudioWorklet` instead of scheduling one `AudioBufferSourceNode` per decoded chunk: the worklet pulls PCM from a reusable buffer on the audio thread, so there are no per-chunk allocations or seams between chunks, pause/seek don't need to tear down a queue, and the played sample position gives a precise clock to sync video to.
+- [ ] Lock-free streaming: one `SharedArrayBuffer` ring buffer between the network and decoder workers (and the audio worklet), synchronized with `Atomics`, so nothing is allocated after startup and the GC never runs.
+- [ ] Seek bar previews generated client-side: a second, hidden `VideoDecoder` fetches (via HTTP Range) and decodes only the keyframe for the hovered timestamp, then scales it down with `createImageBitmap`.
+- [ ] Adaptive chunk size: measure every fetch, track bandwidth with an exponentially weighted moving average, fetch small chunks just in time on fast connections and buffer more aggressively on slow ones.
+- [ ] Judder-free 23.976 fps on 60/144 Hz displays: schedule each frame for a specific vsync using the audio worklet's sample clock and `VideoFrame.timestamp`, instead of drawing whenever a frame is ready.
