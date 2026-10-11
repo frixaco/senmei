@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="scheme-light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -15,7 +15,7 @@
           class="min-w-80 flex-1 px-3 border border-gray-500"
           type="url"
           id="videoUrl"
-          value="https://rqbit.anitrack.frixaco.com/torrents/11/stream/0/[SubsPlease]%20Re%20Zero%20kara%20Hajimeru%20Isekai%20Seikatsu%20-%2083%20(1080p)%20[1D8BC969].mkv"
+          value="https://rqbit.anitrack.frixaco.com/torrents/13/stream/0/[SubsPlease]%20Re%20Zero%20kara%20Hajimeru%20Isekai%20Seikatsu%20-%2085%20(1080p)%20[C0F3B0D6].mkv"
         />
         <input
           class="px-3 border border-gray-500"
@@ -54,17 +54,43 @@
           <span id="originalLabel">Original · no Anime4K</span>
           <span id="upscaledLabel">Anime4K · 2×</span>
         </div>
-        <div id="comparison">
-          <canvas id="subtitleCanvas"></canvas>
-          <div id="originalViewport" class="comparison-viewport" aria-label="Original video view">
-            <img id="original" alt="Original source preview" />
-            <canvas id="originalVideo" class="hidden" aria-label="Original video"></canvas>
+        <div id="comparison" class="relative min-h-0 flex-1 overflow-hidden bg-black [--split:50%]">
+          <!-- Explicit CSS sizing keeps the canvas backing dimensions from growing with DPR. -->
+          <canvas
+            id="subtitleCanvas"
+            class="pointer-events-none absolute inset-0 z-1 h-full w-full"
+          ></canvas>
+          <!-- Clip full-size layers so moving the divider never resizes either frame. -->
+          <div
+            id="originalViewport"
+            class="absolute inset-0 [clip-path:inset(0_calc(100%_-_var(--split))_0_0)]"
+            aria-label="Original video view"
+          >
+            <img
+              id="original"
+              class="h-full w-full object-contain [&:not([src])]:hidden"
+              alt="Original source preview"
+            />
+            <canvas
+              id="originalVideo"
+              class="hidden h-full w-full object-contain"
+              aria-label="Original video"
+            ></canvas>
           </div>
-          <div id="upscaledViewport" class="comparison-viewport" aria-label="Upscaled video view">
-            <canvas id="canvas" class="hidden" aria-label="Upscaled video"></canvas>
+          <div
+            id="upscaledViewport"
+            class="absolute inset-0 [clip-path:inset(0_0_0_var(--split))]"
+            aria-label="Upscaled video view"
+          >
+            <canvas
+              id="canvas"
+              class="hidden h-full w-full object-contain"
+              aria-label="Upscaled video"
+            ></canvas>
           </div>
           <button
             id="comparisonDivider"
+            class="absolute inset-y-0 left-(--split) z-2 w-6 -translate-x-1/2 touch-none cursor-col-resize border-0 bg-transparent p-0 after:absolute after:inset-y-0 after:left-1/2 after:w-px after:bg-white/25 after:content-[''] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
             type="button"
             role="slider"
             aria-label="Original and upscaled split"
@@ -74,6 +100,11 @@
             aria-valuetext="50% original, 50% upscaled"
             aria-orientation="horizontal"
           ></button>
+        </div>
+        <div class="flex w-full items-center gap-2">
+          <button id="pause" class="border px-2">Pause</button>
+          <button id="stop" class="border px-2">Stop</button>
+          <div id="seekbar" class="w-full h-4 bg-gray-900 cursor-pointer"></div>
         </div>
       </section>
     </main>

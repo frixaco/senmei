@@ -99,6 +99,12 @@ let selectedFile: File | null = null;
 status.textContent = "Pick an image";
 setButtonsIdleState();
 
+let paused = true;
+let sincePause = 0;
+on("pause", "click", async () => {
+  paused = !paused;
+});
+
 on("playMkv", "click", async () => {
   const url = getElementById<HTMLInputElement>("videoUrl").value;
   canvas.classList.remove("hidden");
